@@ -1,0 +1,309 @@
+services:
+
+  # ---------------------------------------------------------------------------
+  #  LibreChat - Hoofdapplicatie
+  #  Image: stable release (niet -dev)
+  #  Registry: registry.librechat.ai (officieel, ghcr.io is verouderd)
+  #
+  #  Vereist op host (via SSH, eenmalig):
+  #    mkdir -p /opt/librechat/{config,data/mongodb,data/meilisearch,data/pgvector,data/redis,uploads,logs,images}
+  #    Plaats librechat.yaml in /opt/librechat/config/librechat.yaml
+  # ---------------------------------------------------------------------------
+  librechat:
+    image: registry.librechat.ai/danny-avila/librechat:v0.8.5
+    container_name: librechat
+    restart: unless-stopped
+    ports:
+      - "${LC_PORT:-3080}:3080"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      meilisearch:
+        condition: service_started
+      pgvector:
+        condition: service_healthy
+      rag-api:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - /opt/librechat/config/librechat.yaml:/app/librechat.yaml
+      - /opt/librechat/uploads:/app/uploads
+      - /opt/librechat/logs:/app/api/logs
+      - /opt/librechat/images:/app/client/public/images
+    environment:
+      # --- Applicatie ---
+      APP_TITLE: GAIMSLC
+      HOST: 0.0.0.0
+      PORT: "3080"
+      NODE_ENV: production
+      DOMAIN_CLIENT: https://gaimslc.meierijstad.nl
+      DOMAIN_SERVER: https://gaimslc.meierijstad.nl
+      TRUST_PROXY: "1"
+
+      # --- MongoDB ---
+      MONGO_URI: mongodb://${MONGO_ROOT_USER}:${MONGO_ROOT_PASS}@mongodb:27017/LibreChat?authSource=admin
+
+      # --- Redis (sessies + caching) ---
+      USE_REDIS: "true"
+      REDIS_URI: redis://redis:6379
+
+      # --- JWT tokens ---
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+
+      # --- Credential encryptie ---
+      CREDS_KEY: ${CREDS_KEY}
+      CREDS_IV: ${CREDS_IV}
+      SESSION_SECRET: ${SESSION_SECRET}
+
+      # --- Registratie en login ---
+      ALLOW_REGISTRATION: "false"
+      ALLOW_EMAIL_LOGIN: "true"
+      ALLOW_SOCIAL_LOGIN: "true"
+      ALLOW_SOCIAL_REGISTRATION: "true"
+      ALLOW_UNVERIFIED_EMAIL_LOGIN: "true"
+
+      # --- Entra ID SSO (OpenID Connect) ---
+      OPENID_CLIENT_ID: ${OPENID_CLIENT_ID}
+      OPENID_CLIENT_SECRET: ${OPENID_CLIENT_SECRET}
+      OPENID_ISSUER: https://login.microsoftonline.com/${ENTRA_TENANT_ID}/v2.0/
+      OPENID_SESSION_SECRET: ${OPENID_SESSION_SECRET}
+      OPENID_SCOPE: api://eb01ffc3-f8e3-4945-84dd-157ac2de8c34/.default openid profile email offline_access
+      OPENID_CALLBACK_URL: /oauth/openid/callback
+      OPENID_BUTTON_LABEL: Inloggen met Microsoft
+      OPENID_USE_END_SESSION_ENDPOINT: "true"
+      DEBUG_OPENID_REQUESTS: "true"
+      OPENID_GENERATE_NONCE: "true"
+
+
+      # --- Token reuse (verplicht voor Entra ID groepssync) ---
+      OPENID_REUSE_TOKENS: "true"
+
+      # --- Toegangsbeperking via Entra ID app-rol ---
+      OPENID_REQUIRED_ROLE_TOKEN_KIND: id
+      OPENID_REQUIRED_ROLE_PARAMETER_PATH: roles
+      OPENID_REQUIRED_ROLE: ${OPENID_REQUIRED_ROLE}
+
+      # Caching Configuration
+      OPENID_JWKS_URL_CACHE_ENABLED: "true"
+      OPENID_JWKS_URL_CACHE_TIME: "600000"  # 10 minutes in milliseconds
+ 
+      # Azure-specific Configuration
+      OPENID_ON_BEHALF_FLOW_FOR_USERINFO_REQUIRED: "true"
+      OPENID_ON_BEHALF_FLOW_USERINFO_SCOPE: "user.read"
+
+
+      # --- Microsoft Graph API (groepssync + people search) ---
+      USE_ENTRA_ID_FOR_PEOPLE_SEARCH: "true"
+      ENTRA_ID_INCLUDE_OWNERS_AS_MEMBERS: "true"
+      OPENID_GRAPH_SCOPES: "User.Read,GroupMember.Read.All,People.Read,User.ReadBasic.All offline_access"
+
+      # --- MeiliSearch ---
+      SEARCH: "true"
+      MEILI_HOST: http://meilisearch:7700
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY}
+
+      # --- RAG API ---
+      RAG_API_URL: http://rag-api:8000
+
+      # --- LiteLLM (externe AI gateway) ---
+      # Beide nodig: API_KEY voor directe auth, URL voor librechat.yaml ${LITELLM_URL}
+      LITELLM_API_KEY: ${LITELLM_API_KEY}
+      LITELLM_URL: ${LITELLM_URL}
+
+      # --- n8n (env vars nodig voor ${...} resolutie in librechat.yaml) ---
+      N8N_WEBHOOK_BASE_URL: ${N8N_WEBHOOK_BASE_URL}
+      N8N_API_KEY: ${N8N_API_KEY}
+
+      # --- Admin Panel callback URL voor SSO ---
+      ADMIN_PANEL_URL: https://gaimslc-admin.meierijstad.nl
+
+      # --- Logging ---
+      DEBUG_LOGGING: "true"
+      DEBUG_CONSOLE: "true"
+
+      # --- Email (uitgeschakeld) ---
+      EMAIL_SERVICE: ""
+
+    networks:
+      - librechat-net
+
+  # ---------------------------------------------------------------------------
+  #  MongoDB 8.0.20 - Gesprekken, gebruikers, agents, presets
+  #  Gepinde versie conform officieel LibreChat docker-compose
+  #  Poort open voor n8n (andere VM). Auth via MONGO_ROOT_USER/PASS.
+  # ---------------------------------------------------------------------------
+  mongodb:
+    image: mongo:8.0.20
+    container_name: librechat-mongodb
+    restart: unless-stopped
+    ports:
+      - "${MONGO_PORT:-27017}:27017"
+    volumes:
+      - /opt/librechat/data/mongodb:/data/db
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASS}
+      MONGO_INITDB_DATABASE: LibreChat
+    command: mongod --quiet
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - librechat-net
+
+  # ---------------------------------------------------------------------------
+  #  Redis 7 - Sessie-opslag en caching
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: librechat-redis
+    restart: unless-stopped
+    volumes:
+      - /opt/librechat/data/redis:/data
+    command: redis-server --save 60 1 --loglevel warning
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - librechat-net
+
+  # ---------------------------------------------------------------------------
+  #  MeiliSearch v1.35.1 - Full-text zoeken in conversatiegeschiedenis
+  #  Versie conform officieel LibreChat docker-compose
+  # ---------------------------------------------------------------------------
+  meilisearch:
+    image: getmeili/meilisearch:v1.35.1
+    container_name: librechat-meilisearch
+    restart: unless-stopped
+    volumes:
+      - /opt/librechat/data/meilisearch:/meili_data
+    environment:
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY}
+      MEILI_NO_ANALYTICS: "true"
+      MEILI_ENV: production
+    networks:
+      - librechat-net
+
+  # ---------------------------------------------------------------------------
+  #  pgvector 0.8.0 (pg16) - Vector extensie voor RAG embeddings
+  #  pg16 omdat de data directory al geinitialiseerd is met pg16
+  # ---------------------------------------------------------------------------
+  pgvector:
+    image: pgvector/pgvector:0.8.0-pg16
+    container_name: librechat-pgvector
+    restart: unless-stopped
+    volumes:
+      - /opt/librechat/data/pgvector:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U librechat -d librechat_rag"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - librechat-net
+
+  # ---------------------------------------------------------------------------
+  #  RAG API - Document indexering en retrieval via LangChain + FastAPI
+  #  Embeddings via LiteLLM gateway
+  #  Registry: registry.librechat.ai (officieel)
+  # ---------------------------------------------------------------------------
+  rag-api:
+    image: registry.librechat.ai/danny-avila/librechat-rag-api-dev-lite:latest
+    container_name: librechat-rag-api
+    restart: unless-stopped
+    depends_on:
+      pgvector:
+        condition: service_healthy
+    volumes:
+      - /opt/librechat/uploads:/uploads
+    environment:
+      # PostgreSQL verbinding
+      DB_HOST: pgvector
+      DB_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+
+      # Upload map (shared met librechat)
+      RAG_UPLOAD_DIR: /uploads
+
+      # Embeddings via LiteLLM
+      EMBEDDINGS_PROVIDER: openai
+      EMBEDDINGS_MODEL: text-embedding-3-small
+      OPENAI_API_BASE: ${LITELLM_URL}/v1
+      OPENAI_API_KEY: ${LITELLM_API_KEY}
+
+      # Chunk instellingen
+      CHUNK_SIZE: "1500"
+      CHUNK_OVERLAP: "100"
+      RAG_TOP_K: "4"
+    networks:
+      - librechat-net
+
+  # ---------------------------------------------------------------------------
+  #  LibreChat Admin Panel - Officieel beheerportaal (ClickHouse)
+  #  https://github.com/ClickHouse/librechat-admin-panel
+  #  VITE_API_BASE_URL moet de publieke URL zijn (browser moet het bereiken)
+  # ---------------------------------------------------------------------------
+  admin-panel:
+    image: ghcr.io/clickhouse/librechat-admin-panel:latest
+    container_name: librechat-admin-panel
+    restart: unless-stopped
+    ports:
+      - "${ADMIN_PANEL_PORT:-3100}:3000"
+    depends_on:
+      - librechat
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      SESSION_SECRET: ${ADMIN_SESSION_SECRET}
+      VITE_API_BASE_URL: https://gaimslc.meierijstad.nl
+      API_SERVER_URL: http://librechat:3080
+      ADMIN_SSO_ONLY: "${ADMIN_SSO_ONLY:-false}"
+      PORT: "3000"
+    networks:
+      - librechat-net
+
+  # ---------------------------------------------------------------------------
+  #  PgAdmin - Beheerinterface voor pgvector database
+  #  Optioneel: start met  docker compose --profile admin up -d
+  # ---------------------------------------------------------------------------
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: librechat-pgadmin
+    restart: unless-stopped
+    ports:
+      - "${PGADMIN_PORT:-5051}:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+    volumes:
+      - /opt/librechat/data/pgadmin:/var/lib/pgadmin
+    depends_on:
+      pgvector:
+        condition: service_healthy
+    profiles:
+      - admin
+    networks:
+      - librechat-net
+
+networks:
+  librechat-net:
+    name: librechat-net
+    driver: bridge
