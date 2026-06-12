@@ -1,0 +1,30 @@
+{
+  "title": "App Launcher",
+  "enabled": true,
+  "apps": [
+    {
+      "id": "chat",
+      "name": "Chat",
+      "icon": "💬",
+      "description": "Terug naar de chatomgeving",
+      "url": "/c/new",
+      "target": "navigate"
+    },
+    {
+      "id": "versimpelaar",
+      "name": "Versimpelaar",
+      "icon": "🔤",
+      "description": "Vereenvoudig teksten naar B1 of B2 taalniveau",
+      "url": "",
+      "target": "versimpelaar",
+      "config": {
+        "language_levels": [
+          "B1",
+          "B2"
+        ],
+        "default_level": "B1"
+      }
+    }
+  ]
+}
+

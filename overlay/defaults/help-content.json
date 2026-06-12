@@ -1,0 +1,25 @@
+{
+  "title": "Handleiding {{APP_NAME}}",
+  "subtitle": "{{APP_NAME}} — de generatieve AI-tool voor jouw organisatie.",
+  "sections": [
+    {
+      "id": "sec1",
+      "emoji": "📘",
+      "title": "Wat is {{APP_NAME}}?",
+      "content": "<p>{{APP_NAME}} is de generatieve AI-tool voor medewerkers van jouw organisatie. In deze handleiding leggen we uit wat {{APP_NAME}} is, hoe het werkt, wat jij ermee kunt doen en welke rechten je hebt.</p>"
+    },
+    {
+      "id": "sec2",
+      "emoji": "🔒",
+      "title": "Gegevens en privacy",
+      "content": "<p>Om je toegang te geven worden je naam en e-mailadres gebruikt. {{APP_NAME}} draait op de eigen digitale omgeving van jouw organisatie. Persoonsgegevens worden niet gedeeld met externe partijen.</p><p><strong>Belangrijk:</strong> jij blijft altijd verantwoordelijk voor de uiteindelijke inhoud en besluitvorming.</p>"
+    },
+    {
+      "id": "sec3",
+      "emoji": "⚖️",
+      "title": "Jouw rechten",
+      "content": "<ul><li>Gegevensbeveiliging: gesprekken blijven intern binnen de organisatie.</li><li>Transparantie: je hebt recht op uitleg over gebruik en werking.</li><li>Inzage en verwijdering: je kunt gesprekken beheren volgens beleid.</li></ul>"
+    }
+  ]
+}
+
