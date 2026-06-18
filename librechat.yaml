@@ -1,0 +1,24 @@
+version: 1.2.8
+
+cache: true
+
+interface:
+  modelSelect: true
+  parameters: true
+
+endpoints:
+  custom:
+    - name: govchat-orchestrator
+      apiKey: "${N8N_OPENAI_BRIDGE_BEARER_TOKEN}"
+      baseURL: "http://n8n-openai-bridge:3333/v1"
+      modelDisplayLabel: "GovChat Orchestrator"
+      models:
+        default:
+          - govchat-orchestrator
+        fetch: true
+      headers:
+        X-Chat-Id: "{{LIBRECHAT_BODY_CONVERSATIONID}}"
+        X-User-Id: "{{LIBRECHAT_USER_ID}}"
+        X-User-Email: "{{LIBRECHAT_USER_EMAIL}}"
+        X-User-Name: "{{LIBRECHAT_USER_NAME}}"
+        X-User-Role: "{{LIBRECHAT_USER_ROLE}}"

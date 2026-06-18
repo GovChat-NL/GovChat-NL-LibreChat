@@ -1,0 +1,19 @@
+# LiteLLM config-file route (Route A)
+#
+# Gebruik deze file als je modellen declaratief via Git wilt beheren.
+# Je kunt deze route combineren met de LiteLLM UI, maar voor voorspelbaar
+# gedrag in productie wordt één primaire route aanbevolen.
+
+model_list:
+  - model_name: govchat-default
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: os.environ/OPENAI_API_KEY
+
+  - model_name: govchat-versimpelaar
+    litellm_params:
+      model: openai/gpt-4.1-mini
+      api_key: os.environ/OPENAI_API_KEY
+
+# Optioneel: als je model aliases in n8n wilt afdwingen, kies daar in de
+# OpenAI Chat Model node exact één van bovenstaande `model_name` waarden.

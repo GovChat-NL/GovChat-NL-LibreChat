@@ -1,0 +1,158 @@
+{
+  "id": "govchat-orchestrator-litellm",
+  "name": "GovChat Orchestrator (AI Agent)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "orchestrator",
+        "responseMode": "streaming",
+        "options": {}
+      },
+      "id": "WebhookOrchestrator",
+      "name": "Webhook Orchestrator",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -1060,
+        240
+      ],
+      "webhookId": "govchat-orchestrator"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body || {};\nconst headers = $json.headers || {};\n\nconst headerToken = String(headers['x-govchat-token'] || headers['X-Govchat-Token'] || '').trim();\nconst authHeader = String(headers.authorization || headers.Authorization || '').trim();\nconst bearerToken = authHeader.toLowerCase().startsWith('bearer ')\n  ? authHeader.slice(7).trim()\n  : '';\nconst suppliedToken = headerToken || bearerToken;\nconst expectedToken = String($env.N8N_WEBHOOK_TOKEN || '').trim();\n\nif (!expectedToken) throw new Error('Server misconfiguratie: N8N_WEBHOOK_TOKEN ontbreekt');\nif (!suppliedToken || suppliedToken !== expectedToken) throw new Error('Unauthorized webhook token');\n\nfunction extractUserText(messages) {\n  if (!Array.isArray(messages) || messages.length === 0) return '';\n  for (let i = messages.length - 1; i >= 0; i--) {\n    const m = messages[i] || {};\n    if (m.role !== 'user') continue;\n    const c = m.content;\n    if (typeof c === 'string' && c.trim()) return c.trim();\n    if (Array.isArray(c)) {\n      const merged = c\n        .map((part) => {\n          if (!part) return '';\n          if (typeof part === 'string') return part;\n          if (part.type === 'text') return String(part.text || '');\n          return '';\n        })\n        .join(' ')\n        .trim();\n      if (merged) return merged;\n    }\n  }\n  return '';\n}\n\nconst inputText = String(\n  body.text || body.prompt || body.input || extractUserText(body.messages) || ''\n).trim();\n\nif (!inputText) throw new Error('Geen invoertekst gevonden (verwacht text/prompt/input of OpenAI messages)');\n\nreturn [{\n  json: {\n    text: inputText,\n    requestModel: String(body.model || 'govchat-orchestrator'),\n  },\n}];"
+      },
+      "id": "PrepareInput",
+      "name": "Prepare Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -820,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.text }}",
+        "hasOutputParser": false,
+        "options": {
+          "systemMessage": "Je bent de GovChat Orchestrator voor overheidscommunicatie. Gebruik de beschikbare tool wanneer de gebruiker vraagt om versimpelen naar B1 (of vergelijkbare verzoeken zoals vereenvoudigen/herformuleren op taalniveau). Gebruik voor overige vragen je eigen redeneervermogen en geef een direct antwoord. Houd antwoorden feitelijk en voeg geen ongefundeerde informatie toe.",
+          "enableStreaming": true,
+          "maxIterations": 8
+        }
+      },
+      "id": "AIAgentOrchestrator",
+      "name": "AI Agent Orchestrator",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        -560,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4o-mini"
+        },
+        "options": {
+          "baseURL": "={{ (String($env.LITELLM_URL || 'http://litellm:4000').replace(/\\/$/, '')) + '/v1' }}"
+        }
+      },
+      "id": "ChatModelOrchestrator",
+      "name": "OpenAI Chat Model (Orchestrator)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "credentials": {
+        "openAiApi": {
+          "id": "00000000-0000-4000-8000-000000000111",
+          "name": "LiteLLM API"
+        }
+      },
+      "position": [
+        -560,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "description": "Gebruik deze tool ALLEEN om tekst te versimpelen naar B1. Input moet de originele tekst zijn. De tool retourneert JSON met veld 'text'. Geef de tool-output rechtstreeks terug zonder extra uitleg.",
+        "source": "parameter",
+        "workflowJson": "={{ JSON.stringify({\n  id: 'inline-versimpelaar-tool',\n  name: 'Inline Versimpelaar Tool',\n  nodes: [\n    {\n      id: 'execTrigger',\n      name: 'When Executed by Another Workflow',\n      type: 'n8n-nodes-base.executeWorkflowTrigger',\n      typeVersion: 1,\n      position: [-420, 120],\n      parameters: {}\n    },\n    {\n      id: 'toolCode1',\n      name: 'Prepare Tool Request',\n      type: 'n8n-nodes-base.code',\n      typeVersion: 2,\n      position: [-180, 120],\n      parameters: {\n        jsCode: \"const input = $json || {};\\nconst text = String(input.text || input.input || input.prompt || '').trim();\\nif (!text) throw new Error('Tool input moet veld text bevatten');\\nconst token = String($env.N8N_WEBHOOK_TOKEN || '').trim();\\nif (!token) throw new Error('N8N_WEBHOOK_TOKEN ontbreekt');\\nreturn [{ json: { text, token } }];\"\n      }\n    },\n    {\n      id: 'toolHttp',\n      name: 'Call Versimpelaar Webhook',\n      type: 'n8n-nodes-base.httpRequest',\n      typeVersion: 4.2,\n      position: [80, 120],\n      parameters: {\n        method: 'POST',\n        url: '=http://n8n:5678/webhook/versimpelaar',\n        sendHeaders: true,\n        headerParameters: {\n          parameters: [\n            { name: 'Content-Type', value: 'application/json' },\n            { name: 'x-govchat-token', value: '={{$json.token}}' }\n          ]\n        },\n        sendBody: true,\n        specifyBody: 'json',\n        jsonBody: '={{ JSON.stringify({ text: $json.text }) }}',\n        options: { timeout: 120000 }\n      }\n    },\n    {\n      id: 'toolCode2',\n      name: 'Build Tool Response',\n      type: 'n8n-nodes-base.code',\n      typeVersion: 2,\n      position: [320, 120],\n      parameters: {\n        jsCode: \"const text = String($json.text || $json.output || $json.result || '').trim();\\nif (!text) throw new Error('Versimpelaar gaf geen tekst terug');\\nreturn [{ json: { response: text } }];\"\n      }\n    }\n  ],\n  connections: {\n    'When Executed by Another Workflow': { main: [[{ node: 'Prepare Tool Request', type: 'main', index: 0 }]] },\n    'Prepare Tool Request': { main: [[{ node: 'Call Versimpelaar Webhook', type: 'main', index: 0 }]] },\n    'Call Versimpelaar Webhook': { main: [[{ node: 'Build Tool Response', type: 'main', index: 0 }]] }\n  }\n}) }}"
+      },
+      "id": "ToolVersimpelaarB1",
+      "name": "versimpelaar_b1_tool",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        -340,
+        80
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Orchestrator": {
+      "main": [
+        [
+          {
+            "node": "Prepare Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Input": {
+      "main": [
+        [
+          {
+            "node": "AI Agent Orchestrator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model (Orchestrator)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent Orchestrator",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "versimpelaar_b1_tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent Orchestrator",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent Orchestrator": {
+      "main": [
+        [
+          {
+            "node": "Webhook Orchestrator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

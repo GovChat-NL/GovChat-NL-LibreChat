@@ -6,8 +6,8 @@ services:
   #  Registry: registry.librechat.ai (officieel, ghcr.io is verouderd)
   #
   #  Vereist op host (via SSH, eenmalig):
-  #    mkdir -p /opt/librechat/{config,data/mongodb,data/meilisearch,data/pgvector,data/redis,uploads,logs,images,overlay/data,overlay/publish}
-  #    Plaats librechat.yaml in /opt/librechat/config/librechat.yaml
+  #    mkdir -p /opt/librechat/{data/mongodb,data/meilisearch,data/pgvector,data/redis,uploads,logs,images,overlay/data,overlay/publish}
+  #    Standaard configuratiebestand staat in deze repo: ./librechat.yaml
   # ---------------------------------------------------------------------------
   librechat:
     image: registry.librechat.ai/danny-avila/librechat:v0.8.5
@@ -22,12 +22,14 @@ services:
         condition: service_started
       litellm:
         condition: service_healthy
+      n8n-openai-bridge:
+        condition: service_started
       redis:
         condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      - /opt/librechat/config/librechat.yaml:/app/librechat.yaml
+      - ${LIBRECHAT_CONFIG_PATH:-./librechat.yaml}:/app/librechat.yaml:ro
       - /opt/librechat/uploads:/app/uploads
       - /opt/librechat/logs:/app/api/logs
       - /opt/librechat/images:/app/client/public/images
@@ -37,6 +39,7 @@ services:
       HOST: 0.0.0.0
       PORT: "3080"
       NODE_ENV: production
+      ENDPOINTS: ${ENDPOINTS:-custom}
       DOMAIN_CLIENT: ${PUBLIC_BASE_URL}
       DOMAIN_SERVER: ${PUBLIC_BASE_URL}
       TRUST_PROXY: "1"
@@ -111,6 +114,7 @@ services:
       # Beide nodig: API_KEY voor directe auth, URL voor librechat.yaml ${LITELLM_URL}
       LITELLM_API_KEY: ${LITELLM_API_KEY}
       LITELLM_URL: ${LITELLM_URL}
+      N8N_OPENAI_BRIDGE_BEARER_TOKEN: ${N8N_OPENAI_BRIDGE_BEARER_TOKEN}
 
       # --- Admin Panel callback URL voor SSO ---
       ADMIN_PANEL_URL: ${ADMIN_PANEL_PUBLIC_URL}
@@ -252,18 +256,249 @@ services:
       UI_USERNAME: ${LITELLM_UI_USERNAME}
       UI_PASSWORD: ${LITELLM_UI_PASSWORD}
       LITELLM_LOG: ${LITELLM_LOG_LEVEL:-WARNING}
+    volumes:
+      - ${LITELLM_CONFIG_PATH:-./litellm/config.yaml}:/app/config.yaml:ro
     command:
       - "--port"
       - "4000"
       - "--num_workers"
       - "${LITELLM_NUM_WORKERS:-1}"
+      - "--config"
+      - "/app/config.yaml"
       - "--drop_params"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness')"]
       interval: 30s
       timeout: 10s
+      retries: 10
+      start_period: 180s
+    networks:
+      - librechat-net
+
+  # ---------------------------------------------------------------------------
+  #  n8n PostgreSQL - workflow metadata + execution storage
+  # ---------------------------------------------------------------------------
+  n8n-postgres:
+    image: postgres:16-alpine
+    container_name: librechat-n8n-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: n8n
+      POSTGRES_USER: n8n
+      POSTGRES_PASSWORD: ${N8N_POSTGRES_PASSWORD}
+    volumes:
+      - n8n-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U n8n -d n8n"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks:
+      - librechat-net
+
+  # ---------------------------------------------------------------------------
+  #  n8n - workflow engine (niet publiek geëxposed)
+  #  - Versimpelaar webhook draait hierop
+  #  - Alleen webhook route wordt via nginx geproxied
+  # ---------------------------------------------------------------------------
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:${N8N_VERSION:-2.25.7}
+    container_name: librechat-n8n
+    restart: unless-stopped
+    depends_on:
+      n8n-postgres:
+        condition: service_healthy
+      litellm:
+        condition: service_healthy
+    ports:
+      - "5678:5678"
+    expose:
+      - "5678"
+      - "5679"
+    environment:
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: n8n-postgres
+      DB_POSTGRESDB_PORT: "5432"
+      DB_POSTGRESDB_DATABASE: n8n
+      DB_POSTGRESDB_USER: n8n
+      DB_POSTGRESDB_PASSWORD: ${N8N_POSTGRES_PASSWORD}
+
+      # Security hardening
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+      N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      N8N_PERSONALIZATION_ENABLED: "false"
+      N8N_VERSION_NOTIFICATIONS_ENABLED: "false"
+      N8N_TEMPLATES_ENABLED: "false"
+      N8N_BASIC_AUTH_ACTIVE: "true"
+      N8N_BASIC_AUTH_USER: ${N8N_BASIC_AUTH_USER}
+      N8N_BASIC_AUTH_PASSWORD: ${N8N_BASIC_AUTH_PASSWORD}
+
+      # Runtime
+      N8N_PORT: "5678"
+      N8N_PROTOCOL: http
+      N8N_HOST: localhost
+      N8N_PATH: /
+      N8N_EDITOR_BASE_URL: http://localhost:5678
+      WEBHOOK_URL: http://localhost:5678
+      GENERIC_TIMEZONE: ${TZ:-Europe/Amsterdam}
+      TZ: ${TZ:-Europe/Amsterdam}
+      N8N_LOG_LEVEL: ${N8N_LOG_LEVEL:-warn}
+      N8N_PUBLIC_API_DISABLED: "true"
+      N8N_BLOCK_FILE_ACCESS_TO_N8N_FILES: "true"
+      # Nodig voor Code node gebruik van $env.* in external runners mode
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
+      N8N_RUNNERS_MODE: external
+      N8N_RUNNERS_BROKER_LISTEN_ADDRESS: 0.0.0.0
+      N8N_RUNNERS_AUTH_TOKEN: ${N8N_RUNNERS_AUTH_TOKEN}
+
+      # LLM target + webhook shared secret
+      LITELLM_URL: ${LITELLM_URL}
+      LITELLM_API_KEY: ${LITELLM_API_KEY}
+      N8N_WEBHOOK_TOKEN: ${N8N_WEBHOOK_TOKEN}
+    volumes:
+      - n8n-data:/home/node/.n8n
+      - ./n8n/bootstrap:/bootstrap:ro
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:5678/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - librechat-net
+
+  # ---------------------------------------------------------------------------
+  #  n8n external task runners (vereist voor production-safe code execution)
+  # ---------------------------------------------------------------------------
+  n8n-runners:
+    image: n8nio/runners:${N8N_VERSION:-2.25.7}
+    container_name: librechat-n8n-runners
+    restart: unless-stopped
+    depends_on:
+      n8n:
+        condition: service_healthy
+    environment:
+      N8N_RUNNERS_TASK_BROKER_URI: http://n8n:5679
+      N8N_RUNNERS_AUTH_TOKEN: ${N8N_RUNNERS_AUTH_TOKEN}
+      # Nodig voor Code node gebruik van $env.* in runner context
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
+      N8N_RUNNERS_AUTO_SHUTDOWN_TIMEOUT: "30"
+      N8N_RUNNERS_LAUNCHER_LOG_LEVEL: warn
+    networks:
+      - librechat-net
+
+  # ---------------------------------------------------------------------------
+  #  n8n bootstrap - importeert standaard Versimpelaar workflow éénmalig
+  # ---------------------------------------------------------------------------
+  n8n-bootstrap:
+    image: docker.n8n.io/n8nio/n8n:${N8N_VERSION:-2.25.7}
+    container_name: librechat-n8n-bootstrap
+    restart: "no"
+    depends_on:
+      n8n:
+        condition: service_healthy
+      n8n-runners:
+        condition: service_started
+    environment:
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: n8n-postgres
+      DB_POSTGRESDB_PORT: "5432"
+      DB_POSTGRESDB_DATABASE: n8n
+      DB_POSTGRESDB_USER: n8n
+      DB_POSTGRESDB_PASSWORD: ${N8N_POSTGRES_PASSWORD}
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+      N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
+      N8N_WEBHOOK_TOKEN: ${N8N_WEBHOOK_TOKEN}
+      LITELLM_URL: ${LITELLM_URL}
+      LITELLM_API_KEY: ${LITELLM_API_KEY}
+    volumes:
+      - n8n-data:/home/node/.n8n
+      - ./n8n/bootstrap:/bootstrap:ro
+    entrypoint:
+      - /bin/sh
+      - -lc
+    command:
+      - |
+        set -e
+
+        if [ -z "$${LITELLM_API_KEY}" ]; then
+          echo "LITELLM_API_KEY ontbreekt; kan n8n credential niet bootstrap'en"
+          exit 1
+        fi
+
+        if [ -z "$${LITELLM_URL}" ]; then
+          echo "LITELLM_URL ontbreekt; kan n8n credential niet bootstrap'en"
+          exit 1
+        fi
+
+        cat > /tmp/litellm-openai-credential.json <<EOF
+        [
+          {
+            "id": "00000000-0000-4000-8000-000000000111",
+            "name": "LiteLLM API",
+            "type": "openAiApi",
+            "data": {
+              "apiKey": "$${LITELLM_API_KEY}",
+              "url": "$${LITELLM_URL%/}/v1"
+            }
+          }
+        ]
+        EOF
+
+        n8n import:credentials --input=/tmp/litellm-openai-credential.json
+
+        if [ -f /home/node/.n8n/.govchat-seeded-v4 ]; then
+          echo "n8n workflows already seeded (v4)"
+        else
+          echo "Seeding/updating workflows to v4"
+          touch /home/node/.n8n/.govchat-seeded-v4
+        fi
+
+        # Altijd opnieuw importeren zodat workflow-updates uit bootstrap direct actief zijn
+        n8n import:workflow --input=/bootstrap/workflows/versimpelaar-litellm.json
+        n8n import:workflow --input=/bootstrap/workflows/orchestrator-litellm.json
+        n8n publish:workflow --id=govchat-versimpelaar-b1-litellm || true
+        n8n publish:workflow --id=govchat-orchestrator-litellm || true
+    networks:
+      - librechat-net
+
+  # ---------------------------------------------------------------------------
+  #  n8n OpenAI Bridge - OpenAI-compatibele laag tussen LibreChat en n8n
+  # ---------------------------------------------------------------------------
+  n8n-openai-bridge:
+    build:
+      context: ../n8n-openai-bridge
+      dockerfile: docker/Dockerfile.build
+    image: n8n-openai-bridge:local
+    container_name: n8n-openai-bridge
+    restart: unless-stopped
+    depends_on:
+      n8n:
+        condition: service_healthy
+    expose:
+      - "3333"
+    environment:
+      PORT: "3333"
+      BEARER_TOKEN: ${N8N_OPENAI_BRIDGE_BEARER_TOKEN}
+      N8N_WEBHOOK_BEARER_TOKEN: ${N8N_WEBHOOK_TOKEN}
+      MODEL_LOADER_TYPE: file
+      MODELS_CONFIG_FILE: /app/models.json
+      LOG_REQUESTS: ${N8N_OPENAI_BRIDGE_LOG_REQUESTS:-false}
+      ENABLE_TASK_DETECTION: ${N8N_OPENAI_BRIDGE_ENABLE_TASK_DETECTION:-false}
+      SESSION_ID_HEADERS: ${N8N_OPENAI_BRIDGE_SESSION_ID_HEADERS:-X-Session-Id,X-Chat-Id,X-OpenWebUI-Chat-Id}
+      USER_ID_HEADERS: ${N8N_OPENAI_BRIDGE_USER_ID_HEADERS:-X-User-Id,X-OpenWebUI-User-Id}
+      USER_EMAIL_HEADERS: ${N8N_OPENAI_BRIDGE_USER_EMAIL_HEADERS:-X-User-Email,X-OpenWebUI-User-Email}
+      USER_NAME_HEADERS: ${N8N_OPENAI_BRIDGE_USER_NAME_HEADERS:-X-User-Name,X-OpenWebUI-User-Name}
+      USER_ROLE_HEADERS: ${N8N_OPENAI_BRIDGE_USER_ROLE_HEADERS:-X-User-Role,X-OpenWebUI-User-Role}
+    volumes:
+      - ./n8n-openai-bridge/models.json:/app/models.json:ro
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3333/health"]
+      interval: 30s
+      timeout: 5s
       retries: 3
-      start_period: 40s
+      start_period: 15s
     networks:
       - librechat-net
 
@@ -354,8 +589,6 @@ services:
       API_SERVER_URL: http://librechat:3080
       ADMIN_SSO_ONLY: "${ADMIN_SSO_ONLY:-false}"
       PORT: "3000"
-    profiles:
-      - adminpanel
     networks:
       - librechat-net
 
@@ -415,3 +648,7 @@ networks:
   librechat-net:
     name: librechat-net
     driver: bridge
+
+volumes:
+  n8n-data:
+  n8n-postgres-data:

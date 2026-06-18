@@ -400,6 +400,7 @@
     if (document.getElementById("gc-vs")) return;
     const webhook = app.url || "";
     const defaultLevel = app.config?.default_level || "B1";
+    const webhookToken = String(app.config?.webhook_token || "").trim();
     const levelOptions = Array.isArray(app.config?.language_levels) && app.config.language_levels.length
       ? app.config.language_levels
       : ["B1", "B2"];
@@ -572,7 +573,10 @@
 
         const resp = await fetch(webhook, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            ...(webhookToken ? { "x-govchat-token": webhookToken } : {}),
+          },
           body: JSON.stringify({
             text: input.value,
             language_level: level?.value || "B1",

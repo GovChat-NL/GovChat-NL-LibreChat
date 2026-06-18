@@ -14,15 +14,13 @@
       "id": "versimpelaar",
       "name": "Versimpelaar",
       "icon": "🔤",
-      "description": "Vereenvoudig teksten naar B1 of B2 taalniveau",
-      "url": "",
+      "description": "Vereenvoudig teksten naar B1 taalniveau",
+      "url": "/n8n/webhook/versimpelaar",
       "target": "versimpelaar",
       "config": {
-        "language_levels": [
-          "B1",
-          "B2"
-        ],
-        "default_level": "B1"
+        "language_levels": ["B1"],
+        "default_level": "B1",
+        "webhook_token": "local_n8n_webhook_token_change_me"
       }
     }
   ]
