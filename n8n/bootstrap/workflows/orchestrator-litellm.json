@@ -21,7 +21,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const body = $json.body || {};\nconst headers = $json.headers || {};\n\nconst headerToken = String(headers['x-govchat-token'] || headers['X-Govchat-Token'] || '').trim();\nconst authHeader = String(headers.authorization || headers.Authorization || '').trim();\nconst bearerToken = authHeader.toLowerCase().startsWith('bearer ')\n  ? authHeader.slice(7).trim()\n  : '';\nconst suppliedToken = headerToken || bearerToken;\nconst expectedToken = String($env.N8N_WEBHOOK_TOKEN || '').trim();\n\nif (!expectedToken) throw new Error('Server misconfiguratie: N8N_WEBHOOK_TOKEN ontbreekt');\nif (!suppliedToken || suppliedToken !== expectedToken) throw new Error('Unauthorized webhook token');\n\nfunction extractUserText(messages) {\n  if (!Array.isArray(messages) || messages.length === 0) return '';\n  for (let i = messages.length - 1; i >= 0; i--) {\n    const m = messages[i] || {};\n    if (m.role !== 'user') continue;\n    const c = m.content;\n    if (typeof c === 'string' && c.trim()) return c.trim();\n    if (Array.isArray(c)) {\n      const merged = c\n        .map((part) => {\n          if (!part) return '';\n          if (typeof part === 'string') return part;\n          if (part.type === 'text') return String(part.text || '');\n          return '';\n        })\n        .join(' ')\n        .trim();\n      if (merged) return merged;\n    }\n  }\n  return '';\n}\n\nconst inputText = String(\n  body.text || body.prompt || body.input || extractUserText(body.messages) || ''\n).trim();\n\nif (!inputText) throw new Error('Geen invoertekst gevonden (verwacht text/prompt/input of OpenAI messages)');\n\nreturn [{\n  json: {\n    text: inputText,\n    requestModel: String(body.model || 'govchat-orchestrator'),\n  },\n}];"
+        "jsCode": "const body = $json.body || {};\nconst headers = $json.headers || {};\n\nconst headerToken = String(headers['x-govchat-token'] || headers['X-Govchat-Token'] || '').trim();\nconst authHeader = String(headers.authorization || headers.Authorization || '').trim();\nconst bearerToken = authHeader.toLowerCase().startsWith('bearer ')\n  ? authHeader.slice(7).trim()\n  : '';\nconst suppliedToken = headerToken || bearerToken;\nconst expectedToken = String($env.N8N_WEBHOOK_TOKEN || '').trim();\n\nif (!expectedToken) throw new Error('Server misconfiguratie: N8N_WEBHOOK_TOKEN ontbreekt');\nif (!suppliedToken || suppliedToken !== expectedToken) throw new Error('Unauthorized webhook token');\n\nfunction normalizeContent(content) {\n  if (typeof content === 'string') return content.trim();\n  if (Array.isArray(content)) {\n    return content\n      .map((part) => {\n        if (!part) return '';\n        if (typeof part === 'string') return part;\n        if (part.type === 'text') return String(part.text || '');\n        return '';\n      })\n      .join(' ')\n      .replace(/\\s+/g, ' ')\n      .trim();\n  }\n  return '';\n}\n\nfunction buildConversation(messages) {\n  if (!Array.isArray(messages) || messages.length === 0) return '';\n\n  const lines = messages\n    .map((m) => {\n      const role = String(m?.role || 'user').toLowerCase();\n      const content = normalizeContent(m?.content);\n      if (!content) return '';\n      return `[${role}] ${content}`;\n    })\n    .filter(Boolean);\n\n  if (!lines.length) return '';\n\n  return [\n    'Gebruik onderstaande volledige chatgeschiedenis als context:',\n    '',\n    ...lines,\n  ].join('\\n');\n}\n\nconst directText = String(body.text || body.prompt || body.input || '').trim();\nconst historyText = buildConversation(body.messages);\nconst inputText = directText || historyText;\n\nif (!inputText) throw new Error('Geen invoertekst gevonden (verwacht text/prompt/input of OpenAI messages)');\n\nreturn [{\n  json: {\n    text: inputText,\n    requestModel: String(body.model || 'govchat-orchestrator'),\n    hasHistory: Boolean(historyText),\n  },\n}];"
       },
       "id": "PrepareInput",
       "name": "Prepare Input",
@@ -141,13 +141,7 @@
     },
     "AI Agent Orchestrator": {
       "main": [
-        [
-          {
-            "node": "Webhook Orchestrator",
-            "type": "main",
-            "index": 0
-          }
-        ]
+        []
       ]
     }
   },

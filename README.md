@@ -177,12 +177,13 @@ Flow:
 Webhook: `POST /n8n/webhook/orchestrator`
 
 Flow:
-1. Valideert `x-govchat-token` en payload (`text`, optioneel `task`)
+1. Valideert `x-govchat-token` en payload (`text/prompt/input` of OpenAI `messages`)
 2. Gebruikt een n8n [`AI Agent`](https://docs.n8n.io/integrations/builtin/cluster-nodes/root-nodes/n8n-nodes-langchain.agent/)
 3. Agent is gekoppeld aan [`OpenAI Chat Model`](https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.lmchatopenai/) met Base URL `${LITELLM_URL}/v1`
 4. Agent heeft een sub-tool (`Call n8n Workflow Tool`) voor B1-versimpeling via `/webhook/versimpelaar`
 5. Agent beslist autonoom wanneer deze B1-tool wordt gebruikt
-6. Retourneert OpenAI-compatibele `chat.completion` JSON voor LibreChat custom endpoint gebruik
+6. `Prepare Input` gebruikt de volledige chatgeschiedenis uit `messages` (rollen + content) als context, in plaats van alleen de laatste user-vraag
+7. Streaming loopt direct via de webhook (`responseMode: streaming` + agent `enableStreaming: true`); een expliciete terugkoppeling van `AI Agent` naar `Webhook` is niet nodig
 
 Authenticatie is standaard al voorgeselecteerd via de gebootstrapte `LiteLLM API` credential.
 
