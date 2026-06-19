@@ -389,7 +389,7 @@ services:
       - librechat-net
 
   # ---------------------------------------------------------------------------
-  #  n8n bootstrap - importeert standaard Versimpelaar workflow éénmalig
+  #  n8n bootstrap - importeert workflows uit GovChat-NL-Agents (GitHub)
   # ---------------------------------------------------------------------------
   n8n-bootstrap:
     image: docker.n8n.io/n8nio/n8n:${N8N_VERSION:-2.25.7}
@@ -412,9 +412,10 @@ services:
       N8N_WEBHOOK_TOKEN: ${N8N_WEBHOOK_TOKEN}
       LITELLM_URL: ${LITELLM_URL}
       LITELLM_API_KEY: ${LITELLM_API_KEY}
+      AGENTS_RAW_BASE_URL: ${AGENTS_RAW_BASE_URL:-https://raw.githubusercontent.com/GovChat-NL/GovChat-NL-Agents/main/n8n/workflows}
+      AGENTS_WORKFLOW_FILES: ${AGENTS_WORKFLOW_FILES:-versimpelaar-litellm.json,orchestrator-litellm.json}
     volumes:
       - n8n-data:/home/node/.n8n
-      - ./n8n/bootstrap:/bootstrap:ro
     entrypoint:
       - /bin/sh
       - -lc
@@ -448,6 +449,43 @@ services:
 
         n8n import:credentials --input=/tmp/litellm-openai-credential.json
 
+        mkdir -p /tmp/agents/workflows
+
+        node - <<'NODE'
+        const fs = require('fs');
+        const path = require('path');
+
+        const base = String(process.env.AGENTS_RAW_BASE_URL || '').replace(/\/$/, '');
+        const files = String(process.env.AGENTS_WORKFLOW_FILES || '')
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean);
+
+        if (!base) throw new Error('AGENTS_RAW_BASE_URL ontbreekt');
+        if (!files.length) throw new Error('AGENTS_WORKFLOW_FILES bevat geen workflow-bestanden');
+
+        const outDir = '/tmp/agents/workflows';
+
+        async function download(fileName) {
+          const url = base + '/' + fileName;
+          const res = await fetch(url, { method: 'GET' });
+          if (!res.ok) throw new Error('Download mislukt (' + res.status + ') voor ' + url);
+          const body = await res.text();
+          const out = path.join(outDir, fileName);
+          fs.writeFileSync(out, body, 'utf8');
+          console.log('Downloaded ' + fileName);
+        }
+
+        (async () => {
+          for (const file of files) {
+            await download(file);
+          }
+        })().catch((err) => {
+          console.error(err);
+          process.exit(1);
+        });
+        NODE
+
         if [ -f /home/node/.n8n/.govchat-seeded-v4 ]; then
           echo "n8n workflows already seeded (v4)"
         else
@@ -455,9 +493,9 @@ services:
           touch /home/node/.n8n/.govchat-seeded-v4
         fi
 
-        # Altijd opnieuw importeren zodat workflow-updates uit bootstrap direct actief zijn
-        n8n import:workflow --input=/bootstrap/workflows/versimpelaar-litellm.json
-        n8n import:workflow --input=/bootstrap/workflows/orchestrator-litellm.json
+        # Altijd opnieuw importeren zodat workflow-updates direct actief zijn
+        n8n import:workflow --input=/tmp/agents/workflows/versimpelaar-litellm.json
+        n8n import:workflow --input=/tmp/agents/workflows/orchestrator-litellm.json
         n8n publish:workflow --id=govchat-versimpelaar-b1-litellm || true
         n8n publish:workflow --id=govchat-orchestrator-litellm || true
     networks:

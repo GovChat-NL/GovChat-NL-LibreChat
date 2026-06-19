@@ -125,8 +125,8 @@ curl ${LITELLM_URL}/v1/models
 Werkwijze:
 1. Voeg model toe in LiteLLM UI (admin).
 2. Open n8n workflow(s):
-   - [`orchestrator-litellm.json`](n8n/bootstrap/workflows/orchestrator-litellm.json)
-   - [`versimpelaar-litellm.json`](n8n/bootstrap/workflows/versimpelaar-litellm.json)
+   - [`orchestrator-litellm.json`](../GovChat-NL-Agents/n8n/workflows/orchestrator-litellm.json)
+   - [`versimpelaar-litellm.json`](../GovChat-NL-Agents/n8n/workflows/versimpelaar-litellm.json)
 3. Kies het gewenste model in `OpenAI Chat Model` node.
 4. Publish workflow opnieuw in n8n.
 5. Verifieer dat het model zichtbaar is op `${LITELLM_URL}/v1/models`.
@@ -146,12 +146,30 @@ Werkwijze:
 
 ## Standaard n8n workflows
 
-Bij eerste opstart importeert [`n8n-bootstrap`](docker-compose.yml) automatisch deze workflows:
+Bij opstart importeert [`n8n-bootstrap`](docker-compose.yml:394) automatisch workflows uit de aparte agents-repo via GitHub Raw URLs (geen lokale clone nodig).
 
-- [`n8n/bootstrap/workflows/versimpelaar-litellm.json`](n8n/bootstrap/workflows/versimpelaar-litellm.json)
-- [`n8n/bootstrap/workflows/orchestrator-litellm.json`](n8n/bootstrap/workflows/orchestrator-litellm.json)
+Configuratie in [`.env.example`](.env.example):
 
-Daarnaast bootstrap't [`n8n-bootstrap`](docker-compose.yml) automatisch een n8n credential:
+- `AGENTS_RAW_BASE_URL` (default: `https://raw.githubusercontent.com/GovChat-NL/GovChat-NL-Agents/main/n8n/workflows`)
+- `AGENTS_WORKFLOW_FILES` (default: `versimpelaar-litellm.json,orchestrator-litellm.json`)
+
+Standaard workflow-bronnen:
+
+- [`orchestrator-litellm.json`](../GovChat-NL-Agents/n8n/workflows/orchestrator-litellm.json)
+- [`versimpelaar-litellm.json`](../GovChat-NL-Agents/n8n/workflows/versimpelaar-litellm.json)
+
+Bootstrap-flow:
+
+1. Downloadt elk bestand uit `AGENTS_WORKFLOW_FILES` vanaf `AGENTS_RAW_BASE_URL`.
+2. Importeert workflows in n8n met `n8n import:workflow`.
+3. Publiceert workflows met vaste IDs (`govchat-orchestrator-litellm`, `govchat-versimpelaar-b1-litellm`).
+
+Architectuurafspraak:
+
+- Alle eindgebruikersverkeer loopt via de orchestrator-agent.
+- Sub-agents (zoals Versimpelaar B1) worden door de orchestrator als tool aangeroepen.
+
+Daarnaast bootstrap't [`n8n-bootstrap`](docker-compose.yml:394) automatisch een n8n credential:
 
 - `openAiApi` met naam `LiteLLM API`
 - `apiKey` = `${LITELLM_API_KEY}`
