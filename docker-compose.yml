@@ -130,6 +130,80 @@ services:
       - librechat-net
 
   # ---------------------------------------------------------------------------
+  #  Dev-only seeder voor eerste LibreChat admin user
+  #  - Alleen actief als DEV_SEED_ADMIN_ENABLED=true
+  #  - Verwacht lege user-collectie (eerste registratie wordt admin)
+  # ---------------------------------------------------------------------------
+  librechat-seed-admin:
+    image: curlimages/curl:8.9.1
+    container_name: librechat-seed-admin
+    restart: "no"
+    depends_on:
+      librechat:
+        condition: service_started
+    environment:
+      LIBRECHAT_BASE_URL: http://librechat:3080
+      DEV_SEED_ADMIN_ENABLED: ${DEV_SEED_ADMIN_ENABLED:-false}
+      DEV_SEED_ADMIN_NAME: ${DEV_SEED_ADMIN_NAME:-Local Admin}
+      DEV_SEED_ADMIN_EMAIL: ${DEV_SEED_ADMIN_EMAIL:-admin@local.test}
+      DEV_SEED_ADMIN_PASSWORD: ${DEV_SEED_ADMIN_PASSWORD:-ChangeMe!123}
+    entrypoint:
+      - /bin/sh
+      - -lc
+    command:
+      - |
+        set -e
+
+        if [ "$${DEV_SEED_ADMIN_ENABLED}" != "true" ]; then
+          echo "DEV_SEED_ADMIN_ENABLED=false; seeder wordt overgeslagen"
+          exit 0
+        fi
+
+        echo "Wachten op LibreChat..."
+        i=0
+        until [ $${i} -ge 60 ]; do
+          if curl -fsS "$${LIBRECHAT_BASE_URL}/" >/dev/null 2>&1; then
+            break
+          fi
+          i=$$((i+1))
+          sleep 2
+        done
+
+        if [ $${i} -ge 60 ]; then
+          echo "LibreChat niet bereikbaar binnen timeout"
+          exit 1
+        fi
+
+        echo "Probeer admin gebruiker te registreren (dev-only)..."
+
+        RESPONSE=$$(curl -sS -X POST "$${LIBRECHAT_BASE_URL}/api/auth/register" \
+          -H "Content-Type: application/json" \
+          -d "{\"name\":\"$${DEV_SEED_ADMIN_NAME}\",\"email\":\"$${DEV_SEED_ADMIN_EMAIL}\",\"password\":\"$${DEV_SEED_ADMIN_PASSWORD}\",\"confirm_password\":\"$${DEV_SEED_ADMIN_PASSWORD}\"}" || true)
+
+        echo "$${RESPONSE}" | grep -Eiq "already|exists|duplicate|succes|success" && {
+          echo "Seeder gereed (account bestaat al of registratie gelukt)"
+          exit 0
+        }
+
+        echo "$${RESPONSE}" | grep -Eiq "error|invalid|failed" && {
+          echo "Eerste registratiepoging gaf fout; probeer alternatief payload-formaat"
+        }
+
+        RESPONSE2=$$(curl -sS -X POST "$${LIBRECHAT_BASE_URL}/api/auth/register" \
+          -H "Content-Type: application/json" \
+          -d "{\"name\":\"$${DEV_SEED_ADMIN_NAME}\",\"email\":\"$${DEV_SEED_ADMIN_EMAIL}\",\"password\":\"$${DEV_SEED_ADMIN_PASSWORD}\",\"confirmPassword\":\"$${DEV_SEED_ADMIN_PASSWORD}\"}" || true)
+
+        echo "$${RESPONSE2}" | grep -Eiq "already|exists|duplicate|succes|success" && {
+          echo "Seeder gereed (account bestaat al of registratie gelukt)"
+          exit 0
+        }
+
+        echo "Seeder kon user niet automatisch registreren. Response: $${RESPONSE2}"
+        exit 1
+    networks:
+      - librechat-net
+
+  # ---------------------------------------------------------------------------
   #  LibreChat reverse proxy
   #  - Serveert de app publiek op :3080
   #  - Injecteert GovChat overlay assets (help + app launcher) in HTML
@@ -251,6 +325,9 @@ services:
       DATABASE_CONNECTION_POOL_LIMIT: ${LITELLM_DB_POOL_LIMIT:-10}
       DATABASE_CONNECTION_TIMEOUT: ${LITELLM_DB_TIMEOUT:-30}
       STORE_MODEL_IN_DB: "True"
+      AZURE_OPENAI_API_BASE: ${AZURE_OPENAI_API_BASE}
+      AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION}
+      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY}
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY}
       LITELLM_SALT_KEY: ${LITELLM_SALT_KEY}
       UI_USERNAME: ${LITELLM_UI_USERNAME}
@@ -349,12 +426,18 @@ services:
       # Nodig voor Code node gebruik van $env.* in external runners mode
       N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
       N8N_RUNNERS_MODE: external
+      N8N_RUNNERS_TASK_REQUEST_TIMEOUT: ${N8N_RUNNERS_TASK_REQUEST_TIMEOUT:-120}
+      N8N_RUNNERS_GRANT_TOKEN_TTL: ${N8N_RUNNERS_GRANT_TOKEN_TTL:-120}
       N8N_RUNNERS_BROKER_LISTEN_ADDRESS: 0.0.0.0
       N8N_RUNNERS_AUTH_TOKEN: ${N8N_RUNNERS_AUTH_TOKEN}
 
       # LLM target + webhook shared secret
       LITELLM_URL: ${LITELLM_URL}
       LITELLM_API_KEY: ${LITELLM_API_KEY}
+      N8N_ENABLE_IMAGE_TOOL: ${N8N_ENABLE_IMAGE_TOOL:-false}
+      N8N_LITELLM_IMAGE_BASE_URL: ${N8N_LITELLM_IMAGE_BASE_URL:-${LITELLM_URL}}
+      N8N_LITELLM_IMAGE_API_KEY: ${N8N_LITELLM_IMAGE_API_KEY:-${LITELLM_API_KEY}}
+      N8N_LITELLM_IMAGE_MODEL: ${N8N_LITELLM_IMAGE_MODEL:-gpt-image-1}
       N8N_WEBHOOK_TOKEN: ${N8N_WEBHOOK_TOKEN}
     volumes:
       - n8n-data:/home/node/.n8n
@@ -383,6 +466,12 @@ services:
       N8N_RUNNERS_AUTH_TOKEN: ${N8N_RUNNERS_AUTH_TOKEN}
       # Nodig voor Code node gebruik van $env.* in runner context
       N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
+      LITELLM_URL: ${LITELLM_URL}
+      LITELLM_API_KEY: ${LITELLM_API_KEY}
+      N8N_ENABLE_IMAGE_TOOL: ${N8N_ENABLE_IMAGE_TOOL:-false}
+      N8N_LITELLM_IMAGE_BASE_URL: ${N8N_LITELLM_IMAGE_BASE_URL:-${LITELLM_URL}}
+      N8N_LITELLM_IMAGE_API_KEY: ${N8N_LITELLM_IMAGE_API_KEY:-${LITELLM_API_KEY}}
+      N8N_LITELLM_IMAGE_MODEL: ${N8N_LITELLM_IMAGE_MODEL:-gpt-image-1}
       N8N_RUNNERS_AUTO_SHUTDOWN_TIMEOUT: "30"
       N8N_RUNNERS_LAUNCHER_LOG_LEVEL: warn
     networks:
@@ -412,10 +501,14 @@ services:
       N8N_WEBHOOK_TOKEN: ${N8N_WEBHOOK_TOKEN}
       LITELLM_URL: ${LITELLM_URL}
       LITELLM_API_KEY: ${LITELLM_API_KEY}
+      AGENTS_WORKFLOW_SOURCE: ${AGENTS_WORKFLOW_SOURCE:-github}
       AGENTS_RAW_BASE_URL: ${AGENTS_RAW_BASE_URL:-https://raw.githubusercontent.com/GovChat-NL/GovChat-NL-Agents/main/n8n/workflows}
-      AGENTS_WORKFLOW_FILES: ${AGENTS_WORKFLOW_FILES:-versimpelaar-litellm.json,orchestrator-litellm.json}
+      AGENTS_WORKFLOW_FILES: ${AGENTS_WORKFLOW_FILES:-versimpelaar-litellm.json,orchestrator-litellm.json,image-generator-litellm.json}
+      AGENTS_LOCAL_WORKFLOWS_DIR: ${AGENTS_LOCAL_WORKFLOWS_DIR:-/workspace/GovChat-NL-Agents/n8n/workflows}
+      AGENTS_BOOTSTRAP_FORCE: ${AGENTS_BOOTSTRAP_FORCE:-false}
     volumes:
       - n8n-data:/home/node/.n8n
+      - ../GovChat-NL-Agents:/workspace/GovChat-NL-Agents:ro
     entrypoint:
       - /bin/sh
       - -lc
@@ -455,13 +548,14 @@ services:
         const fs = require('fs');
         const path = require('path');
 
+        const source = String(process.env.AGENTS_WORKFLOW_SOURCE || 'github').trim().toLowerCase();
         const base = String(process.env.AGENTS_RAW_BASE_URL || '').replace(/\/$/, '');
         const files = String(process.env.AGENTS_WORKFLOW_FILES || '')
           .split(',')
           .map((s) => s.trim())
           .filter(Boolean);
+        const localDir = String(process.env.AGENTS_LOCAL_WORKFLOWS_DIR || '/workspace/GovChat-NL-Agents/n8n/workflows').trim();
 
-        if (!base) throw new Error('AGENTS_RAW_BASE_URL ontbreekt');
         if (!files.length) throw new Error('AGENTS_WORKFLOW_FILES bevat geen workflow-bestanden');
 
         const outDir = '/tmp/agents/workflows';
@@ -476,7 +570,26 @@ services:
           console.log('Downloaded ' + fileName);
         }
 
+        function copyLocal(fileName) {
+          const sourcePath = path.join(localDir, fileName);
+          if (!fs.existsSync(sourcePath)) {
+            throw new Error('Lokaal workflow-bestand niet gevonden: ' + sourcePath);
+          }
+          const body = fs.readFileSync(sourcePath, 'utf8');
+          const out = path.join(outDir, fileName);
+          fs.writeFileSync(out, body, 'utf8');
+          console.log('Copied local ' + fileName);
+        }
+
         (async () => {
+          if (source === 'local') {
+            for (const file of files) {
+              copyLocal(file);
+            }
+            return;
+          }
+
+          if (!base) throw new Error('AGENTS_RAW_BASE_URL ontbreekt');
           for (const file of files) {
             await download(file);
           }
@@ -493,11 +606,19 @@ services:
           touch /home/node/.n8n/.govchat-seeded-v4
         fi
 
-        # Altijd opnieuw importeren zodat workflow-updates direct actief zijn
-        n8n import:workflow --input=/tmp/agents/workflows/versimpelaar-litellm.json
-        n8n import:workflow --input=/tmp/agents/workflows/orchestrator-litellm.json
-        n8n publish:workflow --id=govchat-versimpelaar-b1-litellm || true
-        n8n publish:workflow --id=govchat-orchestrator-litellm || true
+        FORCE="$(printf '%s' "$${AGENTS_BOOTSTRAP_FORCE:-false}" | tr '[:upper:]' '[:lower:]')"
+        if [ "$${FORCE}" = "true" ] || [ ! -f /home/node/.n8n/.govchat-seeded-v4 ]; then
+          echo "Import/publish workflows (force=$${FORCE})"
+          n8n import:workflow --input=/tmp/agents/workflows/versimpelaar-litellm.json
+          n8n import:workflow --input=/tmp/agents/workflows/orchestrator-litellm.json
+          n8n import:workflow --input=/tmp/agents/workflows/image-generator-litellm.json
+          n8n publish:workflow --id=govchat-versimpelaar-b1-litellm || true
+          n8n publish:workflow --id=govchat-orchestrator-litellm || true
+          n8n publish:workflow --id=govchat-image-generator-litellm || true
+          touch /home/node/.n8n/.govchat-seeded-v4
+        else
+          echo "Skip import/publish (already seeded; set AGENTS_BOOTSTRAP_FORCE=true to force)"
+        fi
     networks:
       - librechat-net
 

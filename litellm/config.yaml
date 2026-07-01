@@ -5,15 +5,26 @@
 # gedrag in productie wordt één primaire route aanbevolen.
 
 model_list:
+  - model_name: gpt-5.4
+    litellm_params:
+      model: azure/gpt-5.4
+      api_base: os.environ/AZURE_OPENAI_API_BASE
+      api_version: os.environ/AZURE_OPENAI_API_VERSION
+      api_key: os.environ/AZURE_OPENAI_API_KEY
+
   - model_name: govchat-default
     litellm_params:
-      model: openai/gpt-4o-mini
-      api_key: os.environ/OPENAI_API_KEY
+      model: azure/gpt-5.4
+      api_base: os.environ/AZURE_OPENAI_API_BASE
+      api_version: os.environ/AZURE_OPENAI_API_VERSION
+      api_key: os.environ/AZURE_OPENAI_API_KEY
 
   - model_name: govchat-versimpelaar
     litellm_params:
-      model: openai/gpt-4.1-mini
-      api_key: os.environ/OPENAI_API_KEY
+      model: azure/gpt-5.4
+      api_base: os.environ/AZURE_OPENAI_API_BASE
+      api_version: os.environ/AZURE_OPENAI_API_VERSION
+      api_key: os.environ/AZURE_OPENAI_API_KEY
 
 # Optioneel: als je model aliases in n8n wilt afdwingen, kies daar in de
 # OpenAI Chat Model node exact één van bovenstaande `model_name` waarden.

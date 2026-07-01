@@ -5,6 +5,7 @@ cache: true
 interface:
   modelSelect: true
   parameters: true
+  agents: true
 
 endpoints:
   custom:

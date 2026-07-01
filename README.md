@@ -56,6 +56,10 @@ Als je nu **geen RAG** nodig hebt, hoef je deze services niet te starten.
    - `N8N_POSTGRES_PASSWORD`
    - `N8N_ENCRYPTION_KEY`
    - `N8N_WEBHOOK_TOKEN`
+   - `N8N_ENABLE_IMAGE_TOOL` (`true`/`false`, default `false`)
+   - `N8N_LITELLM_IMAGE_BASE_URL` (default `${LITELLM_URL}`)
+   - `N8N_LITELLM_IMAGE_API_KEY` (default `${LITELLM_API_KEY}`)
+   - `N8N_LITELLM_IMAGE_MODEL` (default `gpt-image-1`)
    - DB/secrets (`MONGO_ROOT_PASS`, `MEILI_MASTER_KEY`, `JWT_SECRET`, `JWT_REFRESH_SECRET`, `SESSION_SECRET`, `CREDS_KEY`, `CREDS_IV`)
 3. Zorg dat hostmappen uit [`docker-compose.yml`](docker-compose.yml:9) bestaan.
 4. Standaard wordt [`librechat.yaml`](librechat.yaml) uit de repo gemount. Overschrijven kan met `LIBRECHAT_CONFIG_PATH` in [`.env`](.env).
@@ -131,6 +135,19 @@ Werkwijze:
 4. Publish workflow opnieuw in n8n.
 5. Verifieer dat het model zichtbaar is op `${LITELLM_URL}/v1/models`.
 
+## Afbeeldingen via orchestrator (optioneel, centraal configureerbaar)
+
+De orchestrator kan optioneel een image-tool gebruiken die via LiteLLM naar `/v1/images/generations` gaat.
+
+Centrale configuratie in [`.env`](.env):
+
+- `N8N_ENABLE_IMAGE_TOOL=false` zet de image-tool uit (aanzetten met `true`)
+- `N8N_LITELLM_IMAGE_BASE_URL` voor een apart image-endpoint (fallback: `LITELLM_URL`)
+- `N8N_LITELLM_IMAGE_API_KEY` voor een aparte image-sleutel (fallback: `LITELLM_API_KEY`)
+- `N8N_LITELLM_IMAGE_MODEL` voor het image-model (default: `gpt-image-1`)
+
+Deze waarden worden via compose doorgegeven aan zowel `n8n` als `n8n-runners`, zodat behavior centraal via [`.env`](.env) gestuurd wordt.
+
 ## n8n beveiliging (from-scratch baseline)
 
 - n8n is **niet publiek geëxposed** (alleen intern netwerk).
@@ -150,13 +167,30 @@ Bij opstart importeert [`n8n-bootstrap`](docker-compose.yml:394) automatisch wor
 
 Configuratie in [`.env.example`](.env.example):
 
+- `AGENTS_WORKFLOW_SOURCE` (`github` of `local`)
 - `AGENTS_RAW_BASE_URL` (default: `https://raw.githubusercontent.com/GovChat-NL/GovChat-NL-Agents/main/n8n/workflows`)
-- `AGENTS_WORKFLOW_FILES` (default: `versimpelaar-litellm.json,orchestrator-litellm.json`)
+- `AGENTS_WORKFLOW_FILES` (default: `versimpelaar-litellm.json,orchestrator-litellm.json,image-generator-litellm.json`)
+- `AGENTS_LOCAL_WORKFLOWS_DIR` (default: `/workspace/GovChat-NL-Agents/n8n/workflows`)
+- `AGENTS_BOOTSTRAP_FORCE` (`false` standaard; zet op `true` om import/publish geforceerd opnieuw uit te voeren)
+
+Bronkeuze:
+
+- `AGENTS_WORKFLOW_SOURCE=github`: bootstrap downloadt workflows vanaf `AGENTS_RAW_BASE_URL`.
+- `AGENTS_WORKFLOW_SOURCE=local`: bootstrap leest workflows direct uit de gemounte lokale agents-repo (`AGENTS_LOCAL_WORKFLOWS_DIR`).
+
+Voor lokaal testen van on-gepushte workflow-wijzigingen zet je dus `AGENTS_WORKFLOW_SOURCE=local` in [`.env`](.env).
+
+Stabiliteit in productie/lokaal:
+
+- Standaard (`AGENTS_BOOTSTRAP_FORCE=false`) slaat bootstrap import/publish over na de eerste succesvolle seed.
+- Hiermee voorkom je dat workflows bij elke herstart onnodig gedeactiveerd/geherpubliceerd worden terwijl verkeer al loopt.
+- Alleen bij echte workflow-wijzigingen tijdelijk `AGENTS_BOOTSTRAP_FORCE=true` zetten, daarna terug naar `false`.
 
 Standaard workflow-bronnen:
 
 - [`orchestrator-litellm.json`](../GovChat-NL-Agents/n8n/workflows/orchestrator-litellm.json)
 - [`versimpelaar-litellm.json`](../GovChat-NL-Agents/n8n/workflows/versimpelaar-litellm.json)
+- [`image-generator-litellm.json`](../GovChat-NL-Agents/n8n/workflows/image-generator-litellm.json)
 
 Bootstrap-flow:
 
