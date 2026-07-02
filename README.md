@@ -86,6 +86,28 @@ docker compose -f docker-compose.yml --env-file .env --profile admin up -d
 
 LibreChat admin-panel start automatisch mee in de standaard `docker compose up -d`.
 
+## Troubleshooting: `admin-panel` pull faalt met GHCR 403
+
+Zie je een fout zoals `failed to fetch oauth token ... 403 Forbidden` voor `ghcr.io/clickhouse/librechat-admin-panel`?
+
+Dit gebeurt vaak als Docker nog oude/onjuiste GHCR-credentials heeft opgeslagen. Docker probeert dan **geauthenticeerd** te pullen met een token zonder package-leesrechten, en GHCR weigert de aanvraag.
+
+Snelle fix:
+
+```bash
+docker logout ghcr.io
+docker compose -f docker-compose.yml --env-file .env pull admin-panel
+docker compose -f docker-compose.yml --env-file .env up -d
+```
+
+Verwachte uitkomst:
+
+- `docker logout ghcr.io` meldt `Removing login credentials for ghcr.io`
+- `pull admin-panel` downloadt de image zonder 403
+- `docker compose ... up -d` start `admin-panel` normaal mee
+
+Alleen als jouw organisatie bewust private GHCR-packages gebruikt: log opnieuw in met een token dat package-read rechten heeft.
+
 ## LibreChat standaard koppeling via n8n-openai-bridge
 
 De versimpelaar-URL staat standaard op [`/n8n/webhook/versimpelaar`](overlay/defaults/apps.json) en wordt geproxied naar interne n8n.
@@ -172,6 +194,29 @@ Configuratie in [`.env.example`](.env.example):
 - `AGENTS_WORKFLOW_FILES` (default: `versimpelaar-litellm.json,orchestrator-litellm.json,image-generator-litellm.json`)
 - `AGENTS_LOCAL_WORKFLOWS_DIR` (default: `/workspace/GovChat-NL-Agents/n8n/workflows`)
 - `AGENTS_BOOTSTRAP_FORCE` (`false` standaard; zet op `true` om import/publish geforceerd opnieuw uit te voeren)
+- `N8N_OWNER_EMAIL` (optioneel; als gezet wordt owner automatisch geprovisioned)
+- `N8N_OWNER_PASSWORD` (optioneel; samen met `N8N_OWNER_EMAIL`)
+- `N8N_OWNER_FIRST_NAME` (default: `GovChat`)
+- `N8N_OWNER_LAST_NAME` (default: `Admin`)
+
+### n8n admin-user deterministisch provisionen (aanbevolen)
+
+De service `n8n-bootstrap` kan de n8n owner automatisch aanmaken op basis van [`.env`](.env):
+
+- `N8N_OWNER_EMAIL`
+- `N8N_OWNER_PASSWORD`
+- optioneel `N8N_OWNER_FIRST_NAME` en `N8N_OWNER_LAST_NAME`
+
+Gedrag:
+
+- Als er nog geen owner is, maakt bootstrap de owner aan via de n8n setup-API.
+- Als er al een owner bestaat, wordt de setup overgeslagen (idempotent).
+
+Forceer een nieuwe bootstrap-run met:
+
+```bash
+docker compose -f docker-compose.yml --env-file .env up -d --force-recreate n8n-bootstrap
+```
 
 Bronkeuze:
 

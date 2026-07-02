@@ -1,0 +1,198 @@
+[
+  {
+    "updatedAt": "2026-07-02T13:22:34.615Z",
+    "createdAt": "2026-07-01T15:20:26.966Z",
+    "id": "govchat-orchestrator-litellm",
+    "name": "GovChat Orchestrator (AI Agent)",
+    "description": null,
+    "active": true,
+    "isArchived": false,
+    "nodes": [
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "orchestrator",
+          "responseMode": "streaming",
+          "options": {}
+        },
+        "id": "WebhookOrchestrator",
+        "name": "Webhook Orchestrator",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.1,
+        "position": [
+          -1060,
+          240
+        ],
+        "webhookId": "govchat-orchestrator"
+      },
+      {
+        "parameters": {
+          "promptType": "define",
+          "text": "={{ (Array.isArray($json.body?.messages) && $json.body.messages.length) ? $json.body.messages.map((m) => { const role = String(m?.role || 'user'); const content = Array.isArray(m?.content) ? m.content.filter((p) => p && p.type === 'text').map((p) => String(p.text || '')).join(' ') : String(m?.content || ''); return `[${role}] ${content}`.trim(); }).filter(Boolean).join('\\n') : String($json.body?.text || $json.body?.prompt || $json.body?.input || '') }}",
+          "hasOutputParser": false,
+          "options": {
+            "systemMessage": "Je bent de GovChat Orchestrator voor overheidscommunicatie. Gebruik de beschikbare tool wanneer de gebruiker vraagt om versimpelen naar B1 (of vergelijkbare verzoeken zoals vereenvoudigen/herformuleren op taalniveau). Gebruik de afbeelding-tool wanneer de gebruiker expliciet vraagt om een afbeelding/generatie van beeldmateriaal. Gebruik voor overige vragen je eigen redeneervermogen en geef een direct antwoord. Houd antwoorden feitelijk en voeg geen ongefundeerde informatie toe. Als de afbeelding-tool output markdown bevat (bijv. ![...](...)), geef exact die markdown terug als eindantwoord zonder extra tekst.",
+            "enableStreaming": true,
+            "maxIterations": 8
+          }
+        },
+        "id": "AIAgentOrchestrator",
+        "name": "AI Agent Orchestrator",
+        "type": "@n8n/n8n-nodes-langchain.agent",
+        "typeVersion": 3.1,
+        "position": [
+          -560,
+          240
+        ]
+      },
+      {
+        "parameters": {
+          "model": {
+            "__rl": true,
+            "mode": "list",
+            "value": "gpt-5.4"
+          },
+          "options": {
+            "baseURL": "={{ (String($env.LITELLM_URL || 'http://litellm:4000').replace(/\\/$/, '')) + '/v1' }}"
+          }
+        },
+        "id": "ChatModelOrchestrator",
+        "name": "OpenAI Chat Model (Orchestrator)",
+        "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+        "typeVersion": 1.3,
+        "credentials": {
+          "openAiApi": {
+            "id": "00000000-0000-4000-8000-000000000111",
+            "name": "LiteLLM API"
+          }
+        },
+        "position": [
+          -560,
+          80
+        ]
+      },
+      {
+        "parameters": {
+          "description": "Gebruik deze tool ALLEEN om tekst te versimpelen naar B1. Input moet de originele tekst zijn. De tool retourneert JSON met veld 'text'. Geef de tool-output rechtstreeks terug zonder extra uitleg.",
+          "source": "parameter",
+          "workflowJson": "={{ JSON.stringify({\n  id: 'inline-versimpelaar-tool',\n  name: 'Inline Versimpelaar Tool',\n  nodes: [\n    {\n      id: 'execTrigger',\n      name: 'When Executed by Another Workflow',\n      type: 'n8n-nodes-base.executeWorkflowTrigger',\n      typeVersion: 1,\n      position: [-420, 120],\n      parameters: {}\n    },\n    {\n      id: 'toolCode1',\n      name: 'Prepare Tool Request',\n      type: 'n8n-nodes-base.code',\n      typeVersion: 2,\n      position: [-180, 120],\n      parameters: {\n        jsCode: \"const input = $json || {};\\nconst text = String(input.text || input.input || input.prompt || '').trim();\\nif (!text) throw new Error('Tool input moet veld text bevatten');\\nconst token = String($env.N8N_WEBHOOK_TOKEN || '').trim();\\nif (!token) throw new Error('N8N_WEBHOOK_TOKEN ontbreekt');\\nreturn [{ json: { text, token } }];\"\n      }\n    },\n    {\n      id: 'toolHttp',\n      name: 'Call Versimpelaar Webhook',\n      type: 'n8n-nodes-base.httpRequest',\n      typeVersion: 4.2,\n      position: [80, 120],\n      parameters: {\n        method: 'POST',\n        url: '=http://n8n:5678/webhook/versimpelaar',\n        sendHeaders: true,\n        headerParameters: {\n          parameters: [\n            { name: 'Content-Type', value: 'application/json' },\n            { name: 'x-govchat-token', value: '={{$json.token}}' }\n          ]\n        },\n        sendBody: true,\n        specifyBody: 'json',\n        jsonBody: '={{ JSON.stringify({ text: $json.text }) }}',\n        options: { timeout: 120000 }\n      }\n    },\n    {\n      id: 'toolCode2',\n      name: 'Build Tool Response',\n      type: 'n8n-nodes-base.code',\n      typeVersion: 2,\n      position: [320, 120],\n      parameters: {\n        jsCode: \"const text = String($json.text || $json.output || $json.result || '').trim();\\nif (!text) throw new Error('Versimpelaar gaf geen tekst terug');\\nreturn [{ json: { response: text } }];\"\n      }\n    }\n  ],\n  connections: {\n    'When Executed by Another Workflow': { main: [[{ node: 'Prepare Tool Request', type: 'main', index: 0 }]] },\n    'Prepare Tool Request': { main: [[{ node: 'Call Versimpelaar Webhook', type: 'main', index: 0 }]] },\n    'Call Versimpelaar Webhook': { main: [[{ node: 'Build Tool Response', type: 'main', index: 0 }]] }\n  }\n}) }}"
+        },
+        "id": "ToolVersimpelaarB1",
+        "name": "versimpelaar_b1_tool",
+        "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+        "typeVersion": 2.2,
+        "position": [
+          -340,
+          80
+        ]
+      },
+      {
+        "parameters": {
+          "description": "Gebruik deze tool ALLEEN als de gebruiker expliciet om een afbeelding vraagt. Input bevat minimaal een prompt. Optioneel: size (bijv. 1024x1024), quality (standard|hd).",
+          "source": "database",
+          "workflowId": {
+            "__rl": true,
+            "mode": "list",
+            "value": "govchat-image-generator-litellm"
+          }
+        },
+        "id": "ToolImageGeneration",
+        "name": "image_generation_tool",
+        "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+        "typeVersion": 2.2,
+        "position": [
+          -340,
+          340
+        ]
+      }
+    ],
+    "connections": {
+      "Webhook Orchestrator": {
+        "main": [
+          [
+            {
+              "node": "AI Agent Orchestrator",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "OpenAI Chat Model (Orchestrator)": {
+        "ai_languageModel": [
+          [
+            {
+              "node": "AI Agent Orchestrator",
+              "type": "ai_languageModel",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "versimpelaar_b1_tool": {
+        "ai_tool": [
+          [
+            {
+              "node": "AI Agent Orchestrator",
+              "type": "ai_tool",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "image_generation_tool": {
+        "ai_tool": [
+          [
+            {
+              "node": "AI Agent Orchestrator",
+              "type": "ai_tool",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "AI Agent Orchestrator": {
+        "main": [
+          []
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1"
+    },
+    "staticData": null,
+    "meta": null,
+    "nodeGroups": [],
+    "pinData": {},
+    "versionId": "c8fa555e-e72e-42eb-aea7-1fa3a40006ba",
+    "activeVersionId": "c8fa555e-e72e-42eb-aea7-1fa3a40006ba",
+    "versionCounter": 4,
+    "triggerCount": 1,
+    "sourceWorkflowId": null,
+    "tags": [],
+    "shared": [
+      {
+        "updatedAt": "2026-07-01T15:20:26.966Z",
+        "createdAt": "2026-07-01T15:20:26.966Z",
+        "role": "workflow:owner",
+        "workflowId": "govchat-orchestrator-litellm",
+        "projectId": "JQoh5TKzBgHHnvmR",
+        "project": {
+          "updatedAt": "2026-07-01T15:20:21.347Z",
+          "createdAt": "2026-06-16T13:12:34.208Z",
+          "id": "JQoh5TKzBgHHnvmR",
+          "name": "GovChat Admin <admin@test.nl>",
+          "type": "personal",
+          "icon": null,
+          "description": null,
+          "customTelemetryTags": [],
+          "creatorId": "6aadd2b7-1ab4-453d-bbb5-71f0909e04d1"
+        }
+      }
+    ],
+    "versionMetadata": {
+      "name": null,
+      "description": null
+    }
+  }
+]

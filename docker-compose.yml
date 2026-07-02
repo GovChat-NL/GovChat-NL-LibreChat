@@ -10,7 +10,7 @@ services:
   #    Standaard configuratiebestand staat in deze repo: ./librechat.yaml
   # ---------------------------------------------------------------------------
   librechat:
-    image: registry.librechat.ai/danny-avila/librechat:v0.8.5
+    image: registry.librechat.ai/danny-avila/librechat:v0.8.7
     container_name: librechat
     restart: unless-stopped
     expose:
@@ -39,7 +39,8 @@ services:
       HOST: 0.0.0.0
       PORT: "3080"
       NODE_ENV: production
-      ENDPOINTS: ${ENDPOINTS:-custom}
+      # Include Agents endpoint by default so the Agents UI is visible in LibreChat.
+      ENDPOINTS: ${ENDPOINTS:-custom,agents}
       DOMAIN_CLIENT: ${PUBLIC_BASE_URL}
       DOMAIN_SERVER: ${PUBLIC_BASE_URL}
       TRUST_PROXY: "1"
@@ -425,6 +426,7 @@ services:
       N8N_BLOCK_FILE_ACCESS_TO_N8N_FILES: "true"
       # Nodig voor Code node gebruik van $env.* in external runners mode
       N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
+      NODE_FUNCTION_ALLOW_BUILTIN: fs,path,crypto
       N8N_RUNNERS_MODE: external
       N8N_RUNNERS_TASK_REQUEST_TIMEOUT: ${N8N_RUNNERS_TASK_REQUEST_TIMEOUT:-120}
       N8N_RUNNERS_GRANT_TOKEN_TTL: ${N8N_RUNNERS_GRANT_TOKEN_TTL:-120}
@@ -439,9 +441,11 @@ services:
       N8N_LITELLM_IMAGE_API_KEY: ${N8N_LITELLM_IMAGE_API_KEY:-${LITELLM_API_KEY}}
       N8N_LITELLM_IMAGE_MODEL: ${N8N_LITELLM_IMAGE_MODEL:-gpt-image-1}
       N8N_WEBHOOK_TOKEN: ${N8N_WEBHOOK_TOKEN}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
     volumes:
       - n8n-data:/home/node/.n8n
       - ./n8n/bootstrap:/bootstrap:ro
+      - /opt/librechat/images:/shared-images
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://localhost:5678/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
       interval: 20s
@@ -466,14 +470,19 @@ services:
       N8N_RUNNERS_AUTH_TOKEN: ${N8N_RUNNERS_AUTH_TOKEN}
       # Nodig voor Code node gebruik van $env.* in runner context
       N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
+      NODE_FUNCTION_ALLOW_BUILTIN: fs,path,crypto
       LITELLM_URL: ${LITELLM_URL}
       LITELLM_API_KEY: ${LITELLM_API_KEY}
       N8N_ENABLE_IMAGE_TOOL: ${N8N_ENABLE_IMAGE_TOOL:-false}
       N8N_LITELLM_IMAGE_BASE_URL: ${N8N_LITELLM_IMAGE_BASE_URL:-${LITELLM_URL}}
       N8N_LITELLM_IMAGE_API_KEY: ${N8N_LITELLM_IMAGE_API_KEY:-${LITELLM_API_KEY}}
       N8N_LITELLM_IMAGE_MODEL: ${N8N_LITELLM_IMAGE_MODEL:-gpt-image-1}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
       N8N_RUNNERS_AUTO_SHUTDOWN_TIMEOUT: "30"
       N8N_RUNNERS_LAUNCHER_LOG_LEVEL: warn
+    volumes:
+      - /opt/librechat/images:/shared-images
+      - ./n8n/task-runners.json:/etc/n8n-task-runners.json:ro
     networks:
       - librechat-net
 
@@ -499,6 +508,11 @@ services:
       N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
       N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
       N8N_WEBHOOK_TOKEN: ${N8N_WEBHOOK_TOKEN}
+      N8N_OWNER_EMAIL: ${N8N_OWNER_EMAIL:-}
+      N8N_OWNER_PASSWORD: ${N8N_OWNER_PASSWORD:-}
+      N8N_OWNER_FIRST_NAME: ${N8N_OWNER_FIRST_NAME:-GovChat}
+      N8N_OWNER_LAST_NAME: ${N8N_OWNER_LAST_NAME:-Admin}
+      N8N_OWNER_ENFORCE: ${N8N_OWNER_ENFORCE:-true}
       LITELLM_URL: ${LITELLM_URL}
       LITELLM_API_KEY: ${LITELLM_API_KEY}
       AGENTS_WORKFLOW_SOURCE: ${AGENTS_WORKFLOW_SOURCE:-github}
@@ -509,12 +523,107 @@ services:
     volumes:
       - n8n-data:/home/node/.n8n
       - ../GovChat-NL-Agents:/workspace/GovChat-NL-Agents:ro
+      - ./n8n/bootstrap/workflows:/bootstrap/workflows:ro
     entrypoint:
       - /bin/sh
       - -lc
     command:
       - |
         set -e
+
+        echo "[bootstrap] Controleer n8n owner setup..."
+        node - <<'NODE'
+        const { execSync } = require('child_process');
+        const base = 'http://n8n:5678';
+        const email = String(process.env.N8N_OWNER_EMAIL || '').trim();
+        const password = String(process.env.N8N_OWNER_PASSWORD || '');
+        const firstName = String(process.env.N8N_OWNER_FIRST_NAME || 'GovChat').trim();
+        const lastName = String(process.env.N8N_OWNER_LAST_NAME || 'Admin').trim();
+        const enforceOwner = String(process.env.N8N_OWNER_ENFORCE || 'true').trim().toLowerCase() === 'true';
+
+        async function waitForSettings(maxRetries = 30, delayMs = 2000) {
+          for (let i = 1; i <= maxRetries; i++) {
+            try {
+              const res = await fetch(base + '/rest/settings');
+              if (res.ok) return await res.json();
+            } catch (_) {
+              // retry
+            }
+            await new Promise((r) => setTimeout(r, delayMs));
+          }
+          throw new Error('n8n /rest/settings bleef onbereikbaar tijdens owner bootstrap');
+        }
+
+        if (!email || !password) {
+          console.log('[bootstrap] N8N owner bootstrap overgeslagen (N8N_OWNER_EMAIL/N8N_OWNER_PASSWORD leeg)');
+          process.exit(0);
+        }
+
+        async function loginCheck() {
+          const loginRes = await fetch(base + '/rest/login', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              emailOrLdapLoginId: email,
+              password,
+            }),
+          });
+
+          if (!loginRes.ok) {
+            const body = await loginRes.text();
+            throw new Error('N8N owner-login check mislukt voor ' + email + ' (status ' + loginRes.status + '): ' + body);
+          }
+        }
+
+        async function setupOwner() {
+          const payload = { email, firstName, lastName, password };
+          const setupRes = await fetch(base + '/rest/owner/setup', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+
+          if (!setupRes.ok) {
+            const body = await setupRes.text();
+            throw new Error('Owner setup mislukt (status ' + setupRes.status + '): ' + body);
+          }
+
+          const verify = await waitForSettings();
+          const verifyShowSetup = Boolean(verify?.data?.userManagement?.showSetupOnFirstLoad);
+          if (verifyShowSetup) {
+            throw new Error('Owner setup leek gelukt, maar n8n geeft nog steeds setup-scherm terug');
+          }
+
+          console.log('[bootstrap] N8N owner aangemaakt en geverifieerd voor ' + email);
+        }
+
+        (async () => {
+          const settings = await waitForSettings();
+          const showSetup = Boolean(settings?.data?.userManagement?.showSetupOnFirstLoad);
+
+          if (!showSetup) {
+            console.log('[bootstrap] N8N owner bestaat al; setup wordt overgeslagen');
+            try {
+              await loginCheck();
+              console.log('[bootstrap] N8N owner-login check geslaagd voor ' + email);
+            } catch (err) {
+              if (!enforceOwner) throw err;
+              console.log('[bootstrap] Bestaande owner komt niet overeen met .env credentials; reset user-management en provision owner opnieuw');
+              execSync('n8n user-management:reset', { stdio: 'inherit' });
+              await setupOwner();
+              await loginCheck();
+              console.log('[bootstrap] N8N owner-login check geslaagd voor ' + email + ' (na reset)');
+            }
+          } else {
+            await setupOwner();
+            await loginCheck();
+            console.log('[bootstrap] N8N owner-login check geslaagd voor ' + email);
+          }
+        })().catch((err) => {
+          console.error(err);
+          process.exit(1);
+        });
+        NODE
 
         if [ -z "$${LITELLM_API_KEY}" ]; then
           echo "LITELLM_API_KEY ontbreekt; kan n8n credential niet bootstrap'en"
@@ -570,21 +679,50 @@ services:
           console.log('Downloaded ' + fileName);
         }
 
-        function copyLocal(fileName) {
-          const sourcePath = path.join(localDir, fileName);
-          if (!fs.existsSync(sourcePath)) {
-            throw new Error('Lokaal workflow-bestand niet gevonden: ' + sourcePath);
+        function resolveLocalSourceDir() {
+          const candidates = [
+            localDir,
+            '/bootstrap/workflows',
+          ].filter(Boolean);
+
+          for (const dir of candidates) {
+            const allPresent = files.every((fileName) => fs.existsSync(path.join(dir, fileName)));
+            if (allPresent) {
+              console.log('Using local workflow dir: ' + dir);
+              return dir;
+            }
           }
+
+          return null;
+        }
+
+        function copyLocal(dir, fileName) {
+          const sourcePath = path.join(dir, fileName);
           const body = fs.readFileSync(sourcePath, 'utf8');
           const out = path.join(outDir, fileName);
           fs.writeFileSync(out, body, 'utf8');
-          console.log('Copied local ' + fileName);
+          console.log('Copied local ' + fileName + ' from ' + dir);
         }
 
         (async () => {
           if (source === 'local') {
+            const resolvedDir = resolveLocalSourceDir();
+            if (resolvedDir) {
+              for (const file of files) {
+                copyLocal(resolvedDir, file);
+              }
+              return;
+            }
+
+            if (!base) {
+              throw new Error(
+                'Lokale workflow-bron niet bruikbaar en AGENTS_RAW_BASE_URL ontbreekt voor fallback',
+              );
+            }
+
+            console.log('Lokale workflow-bestanden ontbreken; fallback naar GitHub RAW');
             for (const file of files) {
-              copyLocal(file);
+              await download(file);
             }
             return;
           }
@@ -599,25 +737,28 @@ services:
         });
         NODE
 
-        if [ -f /home/node/.n8n/.govchat-seeded-v4 ]; then
-          echo "n8n workflows already seeded (v4)"
-        else
-          echo "Seeding/updating workflows to v4"
-          touch /home/node/.n8n/.govchat-seeded-v4
-        fi
+        MARKER_FILE=/home/node/.n8n/.govchat-seeded-v4
 
         FORCE="$(printf '%s' "$${AGENTS_BOOTSTRAP_FORCE:-false}" | tr '[:upper:]' '[:lower:]')"
-        if [ "$${FORCE}" = "true" ] || [ ! -f /home/node/.n8n/.govchat-seeded-v4 ]; then
-          echo "Import/publish workflows (force=$${FORCE})"
+        if [ "$${FORCE}" = "true" ] || [ ! -f "$${MARKER_FILE}" ]; then
+          echo "[bootstrap] Import/publish workflows (force=$${FORCE})"
           n8n import:workflow --input=/tmp/agents/workflows/versimpelaar-litellm.json
           n8n import:workflow --input=/tmp/agents/workflows/orchestrator-litellm.json
           n8n import:workflow --input=/tmp/agents/workflows/image-generator-litellm.json
-          n8n publish:workflow --id=govchat-versimpelaar-b1-litellm || true
-          n8n publish:workflow --id=govchat-orchestrator-litellm || true
-          n8n publish:workflow --id=govchat-image-generator-litellm || true
-          touch /home/node/.n8n/.govchat-seeded-v4
+
+          # Verifieer dat workflows echt bestaan door export per id.
+          n8n export:workflow --id=govchat-versimpelaar-b1-litellm --output=/tmp/verify-versimpelaar.json
+          n8n export:workflow --id=govchat-orchestrator-litellm --output=/tmp/verify-orchestrator.json
+          n8n export:workflow --id=govchat-image-generator-litellm --output=/tmp/verify-image-generator.json
+
+          n8n publish:workflow --id=govchat-versimpelaar-b1-litellm
+          n8n publish:workflow --id=govchat-orchestrator-litellm
+          n8n publish:workflow --id=govchat-image-generator-litellm
+
+          touch "$${MARKER_FILE}"
+          echo "[bootstrap] Workflow import/publish geverifieerd"
         else
-          echo "Skip import/publish (already seeded; set AGENTS_BOOTSTRAP_FORCE=true to force)"
+          echo "[bootstrap] Skip import/publish (already seeded; set AGENTS_BOOTSTRAP_FORCE=true to force)"
         fi
     networks:
       - librechat-net
@@ -626,10 +767,7 @@ services:
   #  n8n OpenAI Bridge - OpenAI-compatibele laag tussen LibreChat en n8n
   # ---------------------------------------------------------------------------
   n8n-openai-bridge:
-    build:
-      context: ../n8n-openai-bridge
-      dockerfile: docker/Dockerfile.build
-    image: n8n-openai-bridge:local
+    image: ghcr.io/sveneisenschmidt/n8n-openai-bridge:pr-72
     container_name: n8n-openai-bridge
     restart: unless-stopped
     depends_on:
