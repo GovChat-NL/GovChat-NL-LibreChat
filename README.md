@@ -206,6 +206,59 @@ Deze waarden worden via compose doorgegeven aan zowel [`n8n`](docker-compose.yml
 - Bij base64-output: workflow schrijft PNG naar `/shared-images` en retourneert ook markdown URL.
 - Hierdoor kan LibreChat de afbeelding inline renderen in plaats van alleen tekst te tonen.
 
+### Asynchrone image-jobs met tussentijdse status (aanbevolen)
+
+Voor nette voortgangsfeedback zonder lange spinner ondersteunt deze stack nu een asynchrone route via `govchat-overlay-admin`:
+
+- `POST /govchat-api/image-jobs` → start job (antwoord: `202` + `job_id`)
+- `GET /govchat-api/image-jobs/:job_id` → poll status (`queued`/`running`/`succeeded`/`failed`)
+
+De worker in `govchat-overlay-admin` roept intern de bestaande n8n image-webhook aan (`/webhook/image-generator`) en bewaart jobstatus in `/opt/librechat/overlay/data/image-jobs`.
+
+#### Benodigde `.env` variabelen
+
+- `IMAGE_JOBS_ENABLED=true`
+- `IMAGE_JOBS_TOKEN=<sterk random token>`
+- `IMAGE_JOBS_WEBHOOK_URL=http://n8n:5678/webhook/image-generator`
+- `IMAGE_JOBS_WEBHOOK_TOKEN=<n8n webhook token>` (fallback op `N8N_WEBHOOK_TOKEN`)
+- `IMAGE_JOBS_CONCURRENCY=1`
+- `IMAGE_JOBS_TTL_HOURS=24`
+
+#### Overlay app-configuratie
+
+In [`overlay/defaults/apps.json`](overlay/defaults/apps.json) staat standaard een app `Afbeelding generator` met:
+
+- `target: "imagegen"`
+- `url: "/govchat-api/image-jobs"`
+- `config.image_jobs_api` en `config.image_jobs_token`
+
+De loader toont tijdens polling statusberichten in het Nederlands, zoals:
+
+- “Je afbeelding staat in de wachtrij.”
+- “Je afbeelding wordt nu gegenereerd.”
+- “Je afbeelding is klaar.”
+
+### Chat image-statusmeldingen configureerbaar via Admin (apps.json)
+
+De inline statusmeldingen in de chat zijn configureerbaar via `apps.json` (en dus via de Apps-editor in GovChat Admin):
+
+```json
+{
+  "chat_image_status": {
+    "enabled": true,
+    "first_message": "Afbeelding wordt gegenereerd. Dit duurt meestal 10–40 seconden.",
+    "second_message": "Nog bezig met genereren. De afbeelding verschijnt hier zodra deze klaar is.",
+    "second_delay_ms": 40000
+  }
+}
+```
+
+Notities:
+
+- `enabled=false` schakelt deze chat-statusmeldingen uit.
+- `second_delay_ms` wordt server-side begrensd op 5000–300000 ms.
+- Bij render van de afbeelding verdwijnt de statusmelding automatisch.
+
 ## n8n beveiliging (from-scratch baseline)
 
 - n8n is **niet publiek geëxposed** (alleen intern netwerk).

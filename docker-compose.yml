@@ -908,6 +908,12 @@ services:
       - CORS_ORIGIN=${GOVCHAT_OVERLAY_CORS_ORIGIN}
       - DATA_DIR=/data
       - PUBLISH_DIR=/publish
+      - IMAGE_JOBS_ENABLED=${IMAGE_JOBS_ENABLED:-false}
+      - IMAGE_JOBS_TOKEN=${IMAGE_JOBS_TOKEN:-}
+      - IMAGE_JOBS_WEBHOOK_URL=${IMAGE_JOBS_WEBHOOK_URL:-http://n8n:5678/webhook/image-generator}
+      - IMAGE_JOBS_WEBHOOK_TOKEN=${IMAGE_JOBS_WEBHOOK_TOKEN:-${N8N_WEBHOOK_TOKEN}}
+      - IMAGE_JOBS_CONCURRENCY=${IMAGE_JOBS_CONCURRENCY:-1}
+      - IMAGE_JOBS_TTL_HOURS=${IMAGE_JOBS_TTL_HOURS:-24}
     volumes:
       - /opt/librechat/overlay/data:/data
       - /opt/librechat/overlay/publish:/publish
