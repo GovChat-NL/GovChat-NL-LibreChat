@@ -7,6 +7,9 @@ const wf = Array.isArray(data) ? data[0] : data;
 const prep = (wf.nodes || []).find(
   (n) => n.id === 'PrepareImageRequest' || n.name === 'Prepare Image Request',
 );
+const call = (wf.nodes || []).find(
+  (n) => n.id === 'CallImageApi' || n.name === 'Call Images API',
+);
 const build = (wf.nodes || []).find(
   (n) => n.id === 'BuildImageResponse' || n.name === 'Build Image Response',
 );
@@ -16,6 +19,9 @@ if (!prep) {
 }
 if (!build) {
   throw new Error('Build Image Response node not found');
+}
+if (!call) {
+  throw new Error('Call Images API node not found');
 }
 
 prep.parameters = prep.parameters || {};
@@ -104,6 +110,27 @@ const apiBase = baseRaw.endsWith('/') ? baseRaw.slice(0, -1) : baseRaw;
 const apiKey = String($env.N8N_LITELLM_IMAGE_API_KEY || $env.LITELLM_API_KEY || '').trim();
 const model = String($env.N8N_LITELLM_IMAGE_MODEL || 'gpt-image-1').trim();
 const apiVersion = String($env.N8N_LITELLM_IMAGE_API_VERSION || '2024-02-01').trim();
+
+if (!enabled) {
+  return [{
+    json: {
+      image_disabled: true,
+      disabled_reason: 'Afbeelding-generatie staat uit (N8N_ENABLE_IMAGE_TOOL=false).',
+      // Call node draait met continueOnFail=true en zal op deze URL direct falen,
+      // waarna Build Image Response een nette, niet-fatale melding teruggeeft.
+      generateUrl: 'http://127.0.0.1:9/disabled',
+      requestBody: {},
+      apiKey: '',
+      isAzureDeploymentPath: false,
+      prompt,
+      size,
+      quality,
+      model,
+      apiBase,
+    },
+  }];
+}
+
 if (!apiKey) throw new Error('LITELLM_API_KEY ontbreekt');
 
 const modelLc = model.toLowerCase();
@@ -182,9 +209,34 @@ return [{
 fs.writeFileSync(path, JSON.stringify(data, null, 2));
 console.log('Patched Prepare Image Request jsCode');
 
+call.continueOnFail = true;
+
 build.parameters = build.parameters || {};
 build.parameters.jsCode = `const arr = Array.isArray($json.data) ? $json.data : [];
 const first = arr[0] || {};
+
+if ($json.image_disabled || $json.disabled_reason) {
+  return [{
+    json: {
+      response: 'Afbeelding-generatie is momenteel uitgeschakeld door de beheerder.',
+      image_url: null,
+      has_base64: false,
+      image_disabled: true,
+    },
+  }];
+}
+
+if ($json.error) {
+  const message = String($json.error?.message || $json.error || '').trim();
+  return [{
+    json: {
+      response: message ? 'Afbeelding-generatie mislukt: ' + message : 'Afbeelding-generatie mislukt.',
+      image_url: null,
+      has_base64: false,
+      image_error: true,
+    },
+  }];
+}
 
 const httpUrl = String(first.url || '').trim();
 const b64 = String(first.b64_json || '').trim();

@@ -161,14 +161,38 @@ Werkwijze:
 
 De orchestrator kan optioneel een image-tool gebruiken die via LiteLLM naar `/v1/images/generations` gaat.
 
-Centrale configuratie in [`.env`](.env):
+### Configuratie in [`.env`](.env)
 
-- `N8N_ENABLE_IMAGE_TOOL=false` zet de image-tool uit (aanzetten met `true`)
-- `N8N_LITELLM_IMAGE_BASE_URL` voor een apart image-endpoint (fallback: `LITELLM_URL`)
-- `N8N_LITELLM_IMAGE_API_KEY` voor een aparte image-sleutel (fallback: `LITELLM_API_KEY`)
-- `N8N_LITELLM_IMAGE_MODEL` voor het image-model (default: `gpt-image-1`)
+- `N8N_ENABLE_IMAGE_TOOL=false`
+  - `false`: feature staat uit; workflow geeft een nette niet-fatale melding terug.
+  - `true`: feature staat aan en gebruikt de hieronder genoemde image settings.
+- `N8N_LITELLM_IMAGE_BASE_URL`
+  - apart image-endpoint (fallback: `LITELLM_URL`)
+- `N8N_LITELLM_IMAGE_API_KEY`
+  - aparte image-sleutel (fallback: `LITELLM_API_KEY`)
+- `N8N_LITELLM_IMAGE_MODEL`
+  - image-model (default: `gpt-image-1`)
 
-Deze waarden worden via compose doorgegeven aan zowel `n8n` als `n8n-runners`, zodat behavior centraal via [`.env`](.env) gestuurd wordt.
+Deze waarden worden via compose doorgegeven aan zowel [`n8n`](docker-compose.yml:382) als [`n8n-runners`](docker-compose.yml:461).
+
+### Runtime vereisten voor image generation
+
+1. **JS runner modules toegestaan**
+   - [`n8n/task-runners.json`](n8n/task-runners.json) zet `NODE_FUNCTION_ALLOW_BUILTIN` op `fs,path,crypto`.
+   - Deze file is gemount in [`n8n-runners`](docker-compose.yml:483).
+
+2. **Gedeelde image map beschikbaar**
+   - [`/opt/librechat/images:/shared-images`](docker-compose.yml:484) wordt gebruikt om gegenereerde PNG-bestanden op te slaan.
+   - Bij Linux host-permissieproblemen (`EACCES`) moet de map schrijfbaar zijn voor runner user (uid/gid `1000`).
+
+3. **Publieke URL opbouw**
+   - workflow gebruikt `PUBLIC_BASE_URL` om `/images/<bestand>.png` links te genereren.
+
+### Gedrag bij output
+
+- Bij normale URL-output van model: workflow retourneert direct markdown `![gegenereerde afbeelding](...)`.
+- Bij base64-output: workflow schrijft PNG naar `/shared-images` en retourneert ook markdown URL.
+- Hierdoor kan LibreChat de afbeelding inline renderen in plaats van alleen tekst te tonen.
 
 ## n8n beveiliging (from-scratch baseline)
 
