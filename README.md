@@ -259,6 +259,93 @@ Notities:
 - `second_delay_ms` wordt server-side begrensd op 5000–300000 ms.
 - Bij render van de afbeelding verdwijnt de statusmelding automatisch.
 
+## Overheidscrawler (allowlist + robots.txt) via GovChat Admin + n8n
+
+> ⚠️ **Let op (experimenteel):** de webcrawler is op dit moment een **experimentele feature** en nog **ver van af / niet af** voor volledige productie-inzet. De eerste stappen zijn gezet (beheer, runs, historisch overzicht, basis-optimalisaties), maar verdere doorontwikkeling en hardening zijn nog nodig.
+
+Deze stack ondersteunt nu een beheersbare overheidscrawler met:
+
+- bron-allowlist per domein/pad,
+- robots.txt-respect,
+- handmatige runs vanuit GovChat Admin,
+- automatische schedule-runs in n8n,
+- run-auditlog in GovChat Admin.
+
+### UI in GovChat Admin
+
+In `govchat-overlay-admin` is een nieuwe pagina beschikbaar:
+
+- `/crawler-editor`
+
+Daar beheer je:
+
+- globale crawlerinstellingen (interval, max pagina's, timeout, user-agent),
+- `respect_robots_txt`,
+- embedding-instellingen (aan/uit, model alias, max chars),
+- allowlist-bronnen (`start_url`, `allowed_domains`, `allowed_path_prefixes`, sitemaps),
+- handmatige start van een crawl-run,
+- laatste run-overzicht (visited/blocked/errors).
+
+Daarnaast zie je nu:
+
+- geïndexeerde pagina's met timestamp, subwebsite en pad (laatste run),
+- tokengebruik per domein,
+- tokengebruik per subwebsite.
+
+> Tokengebruik is best-effort: als LiteLLM embedding usage teruggeeft wordt die gebruikt; anders gebruikt de crawler een schatting (`chars/4`).
+
+### Nieuwe workflow
+
+Bootstrap importeert/publisht nu ook:
+
+- [`n8n/bootstrap/workflows/govcrawler-run.json`](n8n/bootstrap/workflows/govcrawler-run.json)
+
+Deze workflow heeft:
+
+- `Webhook /webhook/govcrawler-run` (voor handmatige run vanuit admin),
+- `Schedule Trigger` (15-min basis; intern skip als crawler disabled of geen actieve bronnen),
+- allowlist-validatie,
+- robots.txt-check per bron,
+- crawl-run metrics,
+- run-persist naar GovChat Admin interne API.
+
+### Benodigde `.env` variabelen
+
+Toegevoegd in [`.env.example`](.env.example):
+
+- `AZURE_OPENAI_API_BASE`
+- `AZURE_OPENAI_API_VERSION` (default `2023-05-15`)
+- `AZURE_OPENAI_API_KEY`
+- `CRAWLER_ADMIN_BASE_URL` (default `http://govchat-overlay-admin:3002`)
+- `CRAWLER_INTERNAL_TOKEN` (interne auth tussen n8n en overlay-admin)
+- `CRAWLER_N8N_WEBHOOK_URL` (default `http://n8n:5678/webhook/govcrawler-run`)
+- `CRAWLER_N8N_WEBHOOK_TOKEN` (token voor webhook-calls naar n8n)
+- `CRAWLER_RUNS_LIMIT` (max aantal bewaarde runs)
+- `CRAWLER_EMBEDDING_MODEL` (default `govchat-embedding`)
+
+LiteLLM bevat embedding alias in [`litellm/config.yaml`](litellm/config.yaml):
+
+- `govchat-embedding` -> `azure/text-embedding-3-large`
+
+Voor jullie Azure endpoint in `.env`:
+
+- `AZURE_OPENAI_API_BASE=https://librechat-construction-foundry.cognitiveservices.azure.com`
+- `AZURE_OPENAI_API_VERSION=2023-05-15`
+- `AZURE_OPENAI_API_KEY=<jullie key>`
+
+De crawler gebruikt vervolgens altijd LiteLLM (`${LITELLM_URL}/v1/embeddings`).
+
+Aanbeveling:
+
+- zet `CRAWLER_INTERNAL_TOKEN` en `CRAWLER_N8N_WEBHOOK_TOKEN` expliciet op sterke random values,
+- gebruik niet overal dezelfde token in productie.
+
+### Bootstrap gedrag
+
+`n8n-bootstrap` gebruikt marker `.govchat-seeded-v5` en importeert de crawler-workflow mee.
+
+Als `AGENTS_WORKFLOW_SOURCE=github` staat en `govcrawler-run.json` nog niet in de remote repo staat, valt bootstrap automatisch terug op de lokale file uit [`n8n/bootstrap/workflows`](n8n/bootstrap/workflows).
+
 ## n8n beveiliging (from-scratch baseline)
 
 - n8n is **niet publiek geëxposed** (alleen intern netwerk).
@@ -280,7 +367,7 @@ Configuratie in [`.env.example`](.env.example):
 
 - `AGENTS_WORKFLOW_SOURCE` (`github` of `local`)
 - `AGENTS_RAW_BASE_URL` (default: `https://raw.githubusercontent.com/GovChat-NL/GovChat-NL-Agents/main/n8n/workflows`)
-- `AGENTS_WORKFLOW_FILES` (default: `versimpelaar-litellm.json,orchestrator-litellm.json,image-generator-litellm.json`)
+- `AGENTS_WORKFLOW_FILES` (default: `versimpelaar-litellm.json,orchestrator-litellm.json,image-generator-litellm.json,govcrawler-run.json`)
 - `AGENTS_LOCAL_WORKFLOWS_DIR` (default: `/workspace/GovChat-NL-Agents/n8n/workflows`)
 - `AGENTS_BOOTSTRAP_FORCE` (`false` standaard; zet op `true` om import/publish geforceerd opnieuw uit te voeren)
 - `N8N_OWNER_EMAIL` (optioneel; als gezet wordt owner automatisch geprovisioned)

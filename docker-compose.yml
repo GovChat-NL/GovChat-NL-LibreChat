@@ -442,6 +442,8 @@ services:
       N8N_LITELLM_IMAGE_MODEL: ${N8N_LITELLM_IMAGE_MODEL:-gpt-image-1}
       N8N_WEBHOOK_TOKEN: ${N8N_WEBHOOK_TOKEN}
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
+      CRAWLER_ADMIN_BASE_URL: ${CRAWLER_ADMIN_BASE_URL:-http://govchat-overlay-admin:3002}
+      CRAWLER_INTERNAL_TOKEN: ${CRAWLER_INTERNAL_TOKEN:-${N8N_WEBHOOK_TOKEN}}
     volumes:
       - n8n-data:/home/node/.n8n
       - ./n8n/bootstrap:/bootstrap:ro
@@ -517,7 +519,7 @@ services:
       LITELLM_API_KEY: ${LITELLM_API_KEY}
       AGENTS_WORKFLOW_SOURCE: ${AGENTS_WORKFLOW_SOURCE:-github}
       AGENTS_RAW_BASE_URL: ${AGENTS_RAW_BASE_URL:-https://raw.githubusercontent.com/GovChat-NL/GovChat-NL-Agents/main/n8n/workflows}
-      AGENTS_WORKFLOW_FILES: ${AGENTS_WORKFLOW_FILES:-versimpelaar-litellm.json,orchestrator-litellm.json,image-generator-litellm.json}
+      AGENTS_WORKFLOW_FILES: ${AGENTS_WORKFLOW_FILES:-versimpelaar-litellm.json,orchestrator-litellm.json,image-generator-litellm.json,govcrawler-run.json}
       AGENTS_LOCAL_WORKFLOWS_DIR: ${AGENTS_LOCAL_WORKFLOWS_DIR:-/workspace/GovChat-NL-Agents/n8n/workflows}
       AGENTS_BOOTSTRAP_FORCE: ${AGENTS_BOOTSTRAP_FORCE:-false}
     volumes:
@@ -727,9 +729,17 @@ services:
             return;
           }
 
-          if (!base) throw new Error('AGENTS_RAW_BASE_URL ontbreekt');
+          const resolvedDir = resolveLocalSourceDir();
+          if (!base && !resolvedDir) throw new Error('AGENTS_RAW_BASE_URL ontbreekt en geen lokale workflows gevonden');
           for (const file of files) {
-            await download(file);
+            try {
+              if (!base) throw new Error('Geen AGENTS_RAW_BASE_URL ingesteld');
+              await download(file);
+            } catch (err) {
+              if (!resolvedDir) throw err;
+              console.log('Download mislukt voor ' + file + '; fallback naar lokaal bestand uit ' + resolvedDir);
+              copyLocal(resolvedDir, file);
+            }
           }
         })().catch((err) => {
           console.error(err);
@@ -737,7 +747,7 @@ services:
         });
         NODE
 
-        MARKER_FILE=/home/node/.n8n/.govchat-seeded-v4
+        MARKER_FILE=/home/node/.n8n/.govchat-seeded-v5
 
         FORCE="$(printf '%s' "$${AGENTS_BOOTSTRAP_FORCE:-false}" | tr '[:upper:]' '[:lower:]')"
         if [ "$${FORCE}" = "true" ] || [ ! -f "$${MARKER_FILE}" ]; then
@@ -745,15 +755,24 @@ services:
           n8n import:workflow --input=/tmp/agents/workflows/versimpelaar-litellm.json
           n8n import:workflow --input=/tmp/agents/workflows/orchestrator-litellm.json
           n8n import:workflow --input=/tmp/agents/workflows/image-generator-litellm.json
+          if [ -f /tmp/agents/workflows/govcrawler-run.json ]; then
+            n8n import:workflow --input=/tmp/agents/workflows/govcrawler-run.json
+          fi
 
           # Verifieer dat workflows echt bestaan door export per id.
           n8n export:workflow --id=govchat-versimpelaar-b1-litellm --output=/tmp/verify-versimpelaar.json
           n8n export:workflow --id=govchat-orchestrator-litellm --output=/tmp/verify-orchestrator.json
           n8n export:workflow --id=govchat-image-generator-litellm --output=/tmp/verify-image-generator.json
+          if [ -f /tmp/agents/workflows/govcrawler-run.json ]; then
+            n8n export:workflow --id=govchat-govcrawler-run --output=/tmp/verify-govcrawler-run.json
+          fi
 
           n8n publish:workflow --id=govchat-versimpelaar-b1-litellm
           n8n publish:workflow --id=govchat-orchestrator-litellm
           n8n publish:workflow --id=govchat-image-generator-litellm
+          if [ -f /tmp/agents/workflows/govcrawler-run.json ]; then
+            n8n publish:workflow --id=govchat-govcrawler-run
+          fi
 
           touch "$${MARKER_FILE}"
           echo "[bootstrap] Workflow import/publish geverifieerd"
@@ -914,6 +933,11 @@ services:
       - IMAGE_JOBS_WEBHOOK_TOKEN=${IMAGE_JOBS_WEBHOOK_TOKEN:-${N8N_WEBHOOK_TOKEN}}
       - IMAGE_JOBS_CONCURRENCY=${IMAGE_JOBS_CONCURRENCY:-1}
       - IMAGE_JOBS_TTL_HOURS=${IMAGE_JOBS_TTL_HOURS:-24}
+      - CRAWLER_N8N_WEBHOOK_URL=${CRAWLER_N8N_WEBHOOK_URL:-http://n8n:5678/webhook/govcrawler-run}
+      - CRAWLER_N8N_WEBHOOK_TOKEN=${CRAWLER_N8N_WEBHOOK_TOKEN:-${N8N_WEBHOOK_TOKEN}}
+      - CRAWLER_INTERNAL_TOKEN=${CRAWLER_INTERNAL_TOKEN:-${N8N_WEBHOOK_TOKEN}}
+      - CRAWLER_RUNS_LIMIT=${CRAWLER_RUNS_LIMIT:-200}
+      - CRAWLER_EMBEDDING_MODEL=${CRAWLER_EMBEDDING_MODEL:-govchat-embedding}
     volumes:
       - /opt/librechat/overlay/data:/data
       - /opt/librechat/overlay/publish:/publish

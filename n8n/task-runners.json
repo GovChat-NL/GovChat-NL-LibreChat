@@ -25,8 +25,8 @@
         "HOME"
       ],
       "env-overrides": {
-        "NODE_FUNCTION_ALLOW_BUILTIN": "fs,path,crypto",
-        "NODE_FUNCTION_ALLOW_EXTERNAL": "moment",
+        "NODE_FUNCTION_ALLOW_BUILTIN": "fs,path,crypto,url,http,https",
+        "NODE_FUNCTION_ALLOW_EXTERNAL": "moment,node-fetch,undici",
         "N8N_RUNNERS_HEALTH_CHECK_SERVER_HOST": "0.0.0.0"
       }
     },
