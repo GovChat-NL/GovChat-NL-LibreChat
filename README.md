@@ -119,6 +119,18 @@ De **standaard chat** is gekoppeld via [`librechat.yaml`](librechat.yaml) aan [`
 - bridge model `govchat-orchestrator` -> `http://n8n:5678/webhook/orchestrator`
 - bridge-authenticatie via `${N8N_OPENAI_BRIDGE_BEARER_TOKEN}`
 
+### Context/token usage indicator (default uit)
+
+In deze stack staat de LibreChat context/token-indicator standaard uit in [`librechat.yaml`](librechat.yaml):
+
+```yaml
+interface:
+  contextUsage: false
+  contextCost: false
+```
+
+Reden: de chatflow loopt via n8n-orchestratie en toolcalls. Daardoor kan de UI-indicator afwijken van de werkelijke end-to-end tokenconsumptie.
+
 ## Taalmodellen beheren: twee routes
 
 ### Route A (aanbevolen): via LiteLLM config file (Git-managed)

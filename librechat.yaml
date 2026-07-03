@@ -6,6 +6,8 @@ interface:
   modelSelect: true
   parameters: true
   agents: true
+  contextUsage: false
+  contextCost: false
 
 endpoints:
   custom:
