@@ -1,0 +1,9 @@
+# Local environment
+/.env
+/.env.*
+!/.env.example
+
+# Accidental local artifacts
+/n.type
+/{console.error(e)
+/{const
