@@ -16,6 +16,8 @@ services:
     expose:
       - "3080"
     depends_on:
+      librechat-permissions:
+        condition: service_completed_successfully
       mongodb:
         condition: service_healthy
       meilisearch:
@@ -127,6 +129,26 @@ services:
       # --- Email (uitgeschakeld) ---
       EMAIL_SERVICE: ""
 
+    networks:
+      - librechat-net
+
+  # ---------------------------------------------------------------------------
+  #  Init job: zet juiste rechten op upload mount voor non-root LibreChat user
+  #  - Draait eenmalig per `docker compose up`
+  #  - Maakt /opt/librechat/uploads schrijfbaar voor UID/GID 1000 (node)
+  # ---------------------------------------------------------------------------
+  librechat-permissions:
+    image: alpine:3.20
+    container_name: librechat-permissions
+    restart: "no"
+    command: >
+      sh -lc "
+        mkdir -p /app/uploads/temp &&
+        chown -R 1000:1000 /app/uploads &&
+        chmod -R u+rwX,g+rwX /app/uploads
+      "
+    volumes:
+      - /opt/librechat/uploads:/app/uploads
     networks:
       - librechat-net
 
@@ -426,7 +448,7 @@ services:
       N8N_BLOCK_FILE_ACCESS_TO_N8N_FILES: "true"
       # Nodig voor Code node gebruik van $env.* in external runners mode
       N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
-      NODE_FUNCTION_ALLOW_BUILTIN: fs,path,crypto
+      NODE_FUNCTION_ALLOW_BUILTIN: fs,path,crypto,http,https,url
       N8N_RUNNERS_MODE: external
       N8N_RUNNERS_TASK_REQUEST_TIMEOUT: ${N8N_RUNNERS_TASK_REQUEST_TIMEOUT:-120}
       N8N_RUNNERS_GRANT_TOKEN_TTL: ${N8N_RUNNERS_GRANT_TOKEN_TTL:-120}
@@ -472,7 +494,7 @@ services:
       N8N_RUNNERS_AUTH_TOKEN: ${N8N_RUNNERS_AUTH_TOKEN}
       # Nodig voor Code node gebruik van $env.* in runner context
       N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
-      NODE_FUNCTION_ALLOW_BUILTIN: fs,path,crypto
+      NODE_FUNCTION_ALLOW_BUILTIN: fs,path,crypto,http,https,url
       LITELLM_URL: ${LITELLM_URL}
       LITELLM_API_KEY: ${LITELLM_API_KEY}
       N8N_ENABLE_IMAGE_TOOL: ${N8N_ENABLE_IMAGE_TOOL:-false}
