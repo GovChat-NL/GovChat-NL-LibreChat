@@ -1,0 +1,135 @@
+const fs = require('fs');
+const path = require('path');
+
+const workflow = [
+  {
+    updatedAt: new Date().toISOString(),
+    createdAt: '2026-07-07T12:00:00.000Z',
+    id: 'govchat-transcriptie-litellm',
+    name: 'GovChat Live Transcriptie (LiteLLM)',
+    description: 'Chunk-based speech-to-text via LiteLLM /v1/audio/transcriptions',
+    active: true,
+    isArchived: false,
+    nodes: [
+      {
+        parameters: {
+          httpMethod: 'POST',
+          path: 'transcriptie-litellm',
+          responseMode: 'lastNode',
+          options: {
+            binaryData: false,
+            rawBody: false
+          }
+        },
+        id: 'WebhookTranscriptie',
+        name: 'Webhook Transcriptie',
+        type: 'n8n-nodes-base.webhook',
+        typeVersion: 2.1,
+        position: [-760, 180],
+        webhookId: 'govchat-transcriptie-litellm'
+      },
+      {
+        parameters: {
+          mode: 'jsonToBinary',
+          convertAllData: false,
+          sourceKey: 'body.audio_base64',
+          destinationKey: 'audio',
+          options: {
+            dataIsBase64: true,
+            fileName: '={{ (() => { const mt = String(($json.body && $json.body.mime_type) || "").toLowerCase(); let ext = "webm"; if (mt.includes("wav")) ext = "wav"; else if (mt.includes("ogg")) ext = "ogg"; else if (mt.includes("mp3") || mt.includes("mpeg")) ext = "mp3"; else if (mt.includes("mp4") || mt.includes("m4a")) ext = "m4a"; else if (mt.includes("webm")) ext = "webm"; return (($json.body && $json.body.session_id) || "session") + "-" + (Number(($json.body && $json.body.chunk_index) || 0)) + "." + ext; })() }}'
+          }
+        },
+        id: 'BodyToBinaryAudio',
+        name: 'Body To Binary Audio',
+        type: 'n8n-nodes-base.moveBinaryData',
+        typeVersion: 1.1,
+        position: [-520, 180]
+      },
+      {
+        parameters: {
+          method: 'POST',
+          url: '={{ ((String($env.LITELLM_URL || "").endsWith("/")) ? String($env.LITELLM_URL || "").slice(0, -1) : String($env.LITELLM_URL || "")) + "/v1/audio/transcriptions" }}',
+          authentication: 'none',
+          sendHeaders: true,
+          headerParameters: {
+            parameters: [
+              {
+                name: 'Authorization',
+                value: '={{ "Bearer " + String($env.LITELLM_API_KEY || "") }}'
+              }
+            ]
+          },
+          sendBody: true,
+          contentType: 'multipart-form-data',
+          bodyParameters: {
+            parameters: [
+              {
+                parameterType: 'formData',
+                name: 'model',
+                value: '={{ (($json.body && $json.body.model) || "whisper") }}'
+              },
+              {
+                parameterType: 'formData',
+                name: 'language',
+                value: '={{ (($json.body && $json.body.language) || "nl") }}'
+              },
+              {
+                parameterType: 'formData',
+                name: 'prompt',
+                value: '={{ (($json.body && $json.body.prompt) || "") }}'
+              },
+              {
+                parameterType: 'formBinaryData',
+                name: 'file',
+                inputDataFieldName: 'audio'
+              }
+            ]
+          },
+          options: {
+            timeout: 90000
+          }
+        },
+        id: 'CallTranscriptionsApi',
+        name: 'Call Transcriptions API',
+        type: 'n8n-nodes-base.httpRequest',
+        typeVersion: 4.2,
+        position: [-420, 180]
+      }
+    ],
+    connections: {
+      'Webhook Transcriptie': {
+        main: [
+          [
+            {
+              node: 'Body To Binary Audio',
+              type: 'main',
+              index: 0
+            }
+          ]
+        ]
+      },
+      'Body To Binary Audio': {
+        main: [
+          [
+            {
+              node: 'Call Transcriptions API',
+              type: 'main',
+              index: 0
+            }
+          ]
+        ]
+      }
+    },
+    settings: {
+      executionOrder: 'v1'
+    },
+    pinData: null,
+    versionId: '8af1201a-0f33-4cdb-9f77-a51f17bfe1f0',
+    triggerCount: 0,
+    tags: []
+  }
+];
+
+const outPath = path.resolve(__dirname, '../../GovChat-NL-Agents/n8n/workflows/transcriptie-litellm.json');
+fs.writeFileSync(outPath, JSON.stringify(workflow, null, 2) + '\n', 'utf8');
+console.log(`Wrote ${outPath}`);

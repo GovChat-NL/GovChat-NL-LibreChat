@@ -5,6 +5,27 @@
 # gedrag in productie wordt één primaire route aanbevolen.
 
 model_list:
+  - model_name: whisper
+    litellm_params:
+      model: azure/gpt-4o-transcribe
+      api_base: os.environ/AZURE_OPENAI_STT_API_BASE
+      api_version: os.environ/AZURE_OPENAI_STT_API_VERSION
+      api_key: os.environ/AZURE_OPENAI_STT_API_KEY
+    model_info:
+      mode: audio_transcription
+
+  # Optional second STT route to avoid lock-in.
+  # Configure these env vars and switch the transcript app config `litellm_model`
+  # to `stt-next` in the Admin panel when you want to use the new provider/model.
+  - model_name: stt-next
+    litellm_params:
+      model: os.environ/LITELLM_STT_NEXT_MODEL
+      api_base: os.environ/LITELLM_STT_NEXT_API_BASE
+      api_version: os.environ/LITELLM_STT_NEXT_API_VERSION
+      api_key: os.environ/LITELLM_STT_NEXT_API_KEY
+    model_info:
+      mode: audio_transcription
+
   - model_name: govchat-embedding
     litellm_params:
       model: azure/text-embedding-3-large

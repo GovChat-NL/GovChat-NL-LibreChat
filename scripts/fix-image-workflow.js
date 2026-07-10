@@ -1,6 +1,6 @@
 const fs = require('fs');
 
-const path = 'GovChat-NL-LibreChat/n8n/bootstrap/workflows/image-generator-litellm.json';
+const path = 'GovChat-NL-Agents/n8n/workflows/image-generator-litellm.json';
 const data = JSON.parse(fs.readFileSync(path, 'utf8'));
 const wf = Array.isArray(data) ? data[0] : data;
 

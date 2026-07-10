@@ -298,7 +298,7 @@ Daarnaast zie je nu:
 
 Bootstrap importeert/publisht nu ook:
 
-- [`n8n/bootstrap/workflows/govcrawler-run.json`](n8n/bootstrap/workflows/govcrawler-run.json)
+- [`../GovChat-NL-Agents/n8n/workflows/govcrawler-run.json`](../GovChat-NL-Agents/n8n/workflows/govcrawler-run.json)
 
 Deze workflow heeft:
 
@@ -344,7 +344,7 @@ Aanbeveling:
 
 `n8n-bootstrap` gebruikt marker `.govchat-seeded-v5` en importeert de crawler-workflow mee.
 
-Als `AGENTS_WORKFLOW_SOURCE=github` staat en `govcrawler-run.json` nog niet in de remote repo staat, valt bootstrap automatisch terug op de lokale file uit [`n8n/bootstrap/workflows`](n8n/bootstrap/workflows).
+Als `AGENTS_WORKFLOW_SOURCE=github` staat en een workflow nog niet in de remote repo staat, valt bootstrap automatisch terug op de lokale Agents-map [`../GovChat-NL-Agents/n8n/workflows`](../GovChat-NL-Agents/n8n/workflows).
 
 ## n8n beveiliging (from-scratch baseline)
 
@@ -367,7 +367,7 @@ Configuratie in [`.env.example`](.env.example):
 
 - `AGENTS_WORKFLOW_SOURCE` (`github` of `local`)
 - `AGENTS_RAW_BASE_URL` (default: `https://raw.githubusercontent.com/GovChat-NL/GovChat-NL-Agents/main/n8n/workflows`)
-- `AGENTS_WORKFLOW_FILES` (default: `versimpelaar-litellm.json,orchestrator-litellm.json,image-generator-litellm.json,govcrawler-run.json`)
+- `AGENTS_WORKFLOW_FILES` (default: `versimpelaar-litellm.json,orchestrator-litellm.json,image-generator-litellm.json,transcriptie-litellm.json,transcriptie-title-litellm.json,govcrawler-run.json`)
 - `AGENTS_LOCAL_WORKFLOWS_DIR` (default: `/workspace/GovChat-NL-Agents/n8n/workflows`)
 - `AGENTS_BOOTSTRAP_FORCE` (`false` standaard; zet op `true` om import/publish geforceerd opnieuw uit te voeren)
 - `N8N_OWNER_EMAIL` (optioneel; als gezet wordt owner automatisch geprovisioned)
