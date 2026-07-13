@@ -1,5 +1,16 @@
 # GovChat-NL-LibreChat
 
+> [!WARNING]
+> **Status: niet productierijp / niet gegarandeerd werkend.**
+> Deze repository wordt gedeeld als **inspiratie en referentie-implementatie** voor leveranciers en mede-overheden.
+> Gebruik dit niet als kant-en-klare productieoplossing zonder eigen validatie, hardening, security review en acceptatietesten.
+
+## Belangrijke publicatienotitie
+
+- Doel van deze codebase: architectuurideeën, proof-of-concept flows en samenwerkingsbasis.
+- Bekende beperkingen: onderdelen kunnen incompleet, experimenteel of omgeving-afhankelijk zijn.
+- Verwachte inzet: inspiratie voor aanbesteding, leveranciersdialoog en doorontwikkeling binnen overheidscontext.
+
 Deze variant houdt het bewust simpel:
 
 - OpenWebUI is vervangen door LibreChat
@@ -38,6 +49,27 @@ Niet standaard actief:
 - [`pgadmin`](docker-compose.yml:332): beheertool voor pgvector DB.
 
 Als je nu **geen RAG** nodig hebt, hoef je deze services niet te starten.
+
+## Voor GitHub-publicatie (transparant over status)
+
+Gebruik bij publicatie expliciet deze positionering:
+
+- niet productierijp
+- inspiratie voor leveranciers en mede-overheden
+- aanvullende validatie en hardening vereist
+
+Aanbevolen commit message:
+
+```text
+docs: expliciete publicatiewaarschuwing toegevoegd (niet productierijp, inspiratie voor leveranciers en mede-overheden)
+```
+
+Aanbevolen push-checklist:
+
+1. Controleer dat geen secrets in `.env` of logs staan.
+2. Controleer of alle status-waarschuwingen in README zichtbaar zijn.
+3. Noteer bekende beperkingen en openstaande risico's.
+4. Push pas na interne akkoordronde op deze positionering.
 
 ## Lokaal draaien (simpel)
 

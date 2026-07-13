@@ -30,6 +30,24 @@
       }
     },
     {
+      "id": "beleidskompas",
+      "name": "Beleidskompas",
+      "icon": "🧭",
+      "description": "Ondersteuning bij beleidsafwegingen in vier stappen (SiS 4.0)",
+      "url": "/c/new",
+      "target": "beleidskompas",
+      "config": {
+        "specialist_team": "Bij hoge juridische/financiële impact: betrek concernjurist, financieel adviseur en programmaregisseur.",
+        "sources": [
+          "SiS 4.0 Strategisch kader",
+          "SiS 4.0 Uitvoeringskader",
+          "Provinciale Instrumentenkoffer",
+          "Coalitieakkoord en beleidskaders",
+          "Overzicht wettelijke taken Provincie"
+        ]
+      }
+    },
+    {
       "id": "afbeelding-generator",
       "name": "Afbeelding generator",
       "icon": "🖼️",
@@ -59,7 +77,7 @@
         "overlap_ms": 650,
         "context_prompt": "Nederlands gesprek, maak een complete en nette transcriptie.",
         "max_duration_minutes": 120,
-        "litellm_model": "whisper",
+        "litellm_model": "gpt-4o-transcribe",
         "realtime_enabled": false,
         "realtime_url": "/govchat-api/realtime-stt",
         "realtime_provider": "litellm",

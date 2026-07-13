@@ -59,7 +59,7 @@ function normalizeText(s) {
 async function run() {
   const fixture = getArg('--audio', 'tests/fixtures/transcript-sample-nl.wav');
   const webhook = getArg('--webhook', 'http://localhost:3080/n8n/webhook/transcriptie-litellm');
-  const model = getArg('--model', 'whisper');
+  const model = getArg('--model', 'gpt-4o-transcribe');
   const language = getArg('--language', 'nl');
   const expectedWordsRaw = getArg('--expect-words', '');
   const timeoutMsRaw = Number(getArg('--timeout-ms', '20000'));

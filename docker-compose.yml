@@ -558,7 +558,7 @@ services:
       LITELLM_API_KEY: ${LITELLM_API_KEY}
       AGENTS_WORKFLOW_SOURCE: ${AGENTS_WORKFLOW_SOURCE:-github}
       AGENTS_RAW_BASE_URL: ${AGENTS_RAW_BASE_URL:-https://raw.githubusercontent.com/GovChat-NL/GovChat-NL-Agents/main/n8n/workflows}
-      AGENTS_WORKFLOW_FILES: ${AGENTS_WORKFLOW_FILES:-versimpelaar-litellm.json,orchestrator-litellm.json,image-generator-litellm.json,transcriptie-litellm.json,transcriptie-title-litellm.json,govcrawler-run.json}
+      AGENTS_WORKFLOW_FILES: ${AGENTS_WORKFLOW_FILES:-versimpelaar-litellm.json,orchestrator-litellm.json,image-generator-litellm.json,transcriptie-litellm.json,transcriptie-title-litellm.json,govcrawler-run.json,beleidskompas-hoofdagent.json,beleidskompas-step-stap1.json,beleidskompas-step-stap2.json,beleidskompas-step-stap3.json,beleidskompas-step-stap4.json}
       AGENTS_LOCAL_WORKFLOWS_DIR: ${AGENTS_LOCAL_WORKFLOWS_DIR:-/workspace/GovChat-NL-Agents/n8n/workflows}
       AGENTS_BOOTSTRAP_FORCE: ${AGENTS_BOOTSTRAP_FORCE:-false}
     volumes:
@@ -806,6 +806,21 @@ services:
           if [ -f /tmp/agents/workflows/govcrawler-run.json ]; then
             n8n import:workflow --input=/tmp/agents/workflows/govcrawler-run.json
           fi
+          if [ -f /tmp/agents/workflows/beleidskompas-hoofdagent.json ]; then
+            n8n import:workflow --input=/tmp/agents/workflows/beleidskompas-hoofdagent.json
+          fi
+          if [ -f /tmp/agents/workflows/beleidskompas-step-stap1.json ]; then
+            n8n import:workflow --input=/tmp/agents/workflows/beleidskompas-step-stap1.json
+          fi
+          if [ -f /tmp/agents/workflows/beleidskompas-step-stap2.json ]; then
+            n8n import:workflow --input=/tmp/agents/workflows/beleidskompas-step-stap2.json
+          fi
+          if [ -f /tmp/agents/workflows/beleidskompas-step-stap3.json ]; then
+            n8n import:workflow --input=/tmp/agents/workflows/beleidskompas-step-stap3.json
+          fi
+          if [ -f /tmp/agents/workflows/beleidskompas-step-stap4.json ]; then
+            n8n import:workflow --input=/tmp/agents/workflows/beleidskompas-step-stap4.json
+          fi
 
           # Verifieer dat workflows echt bestaan door export per id.
           n8n export:workflow --id=govchat-versimpelaar-b1-litellm --output=/tmp/verify-versimpelaar.json
@@ -820,6 +835,21 @@ services:
           if [ -f /tmp/agents/workflows/govcrawler-run.json ]; then
             n8n export:workflow --id=govchat-govcrawler-run --output=/tmp/verify-govcrawler-run.json
           fi
+          if [ -f /tmp/agents/workflows/beleidskompas-hoofdagent.json ]; then
+            n8n export:workflow --id=govchat-beleidskompas-hoofdagent --output=/tmp/verify-beleidskompas-hoofdagent.json
+          fi
+          if [ -f /tmp/agents/workflows/beleidskompas-step-stap1.json ]; then
+            n8n export:workflow --id=govchat-beleidskompas-step-stap1 --output=/tmp/verify-beleidskompas-step-stap1.json
+          fi
+          if [ -f /tmp/agents/workflows/beleidskompas-step-stap2.json ]; then
+            n8n export:workflow --id=govchat-beleidskompas-step-stap2 --output=/tmp/verify-beleidskompas-step-stap2.json
+          fi
+          if [ -f /tmp/agents/workflows/beleidskompas-step-stap3.json ]; then
+            n8n export:workflow --id=govchat-beleidskompas-step-stap3 --output=/tmp/verify-beleidskompas-step-stap3.json
+          fi
+          if [ -f /tmp/agents/workflows/beleidskompas-step-stap4.json ]; then
+            n8n export:workflow --id=govchat-beleidskompas-step-stap4 --output=/tmp/verify-beleidskompas-step-stap4.json
+          fi
 
           n8n publish:workflow --id=govchat-versimpelaar-b1-litellm
           n8n publish:workflow --id=govchat-orchestrator-litellm
@@ -832,6 +862,21 @@ services:
           fi
           if [ -f /tmp/agents/workflows/govcrawler-run.json ]; then
             n8n publish:workflow --id=govchat-govcrawler-run
+          fi
+          if [ -f /tmp/agents/workflows/beleidskompas-hoofdagent.json ]; then
+            n8n publish:workflow --id=govchat-beleidskompas-hoofdagent
+          fi
+          if [ -f /tmp/agents/workflows/beleidskompas-step-stap1.json ]; then
+            n8n publish:workflow --id=govchat-beleidskompas-step-stap1
+          fi
+          if [ -f /tmp/agents/workflows/beleidskompas-step-stap2.json ]; then
+            n8n publish:workflow --id=govchat-beleidskompas-step-stap2
+          fi
+          if [ -f /tmp/agents/workflows/beleidskompas-step-stap3.json ]; then
+            n8n publish:workflow --id=govchat-beleidskompas-step-stap3
+          fi
+          if [ -f /tmp/agents/workflows/beleidskompas-step-stap4.json ]; then
+            n8n publish:workflow --id=govchat-beleidskompas-step-stap4
           fi
 
           touch "$${MARKER_FILE}"
@@ -987,6 +1032,8 @@ services:
       - CORS_ORIGIN=${GOVCHAT_OVERLAY_CORS_ORIGIN}
       - DATA_DIR=/data
       - PUBLISH_DIR=/publish
+      - BELEIDSKOMPAS_N8N_BASE_URL=${BELEIDSKOMPAS_N8N_BASE_URL:-http://n8n:5678}
+      - BELEIDSKOMPAS_N8N_WEBHOOK_TOKEN=${BELEIDSKOMPAS_N8N_WEBHOOK_TOKEN:-${N8N_WEBHOOK_TOKEN}}
       - IMAGE_JOBS_ENABLED=${IMAGE_JOBS_ENABLED:-false}
       - IMAGE_JOBS_TOKEN=${IMAGE_JOBS_TOKEN:-}
       - IMAGE_JOBS_WEBHOOK_URL=${IMAGE_JOBS_WEBHOOK_URL:-http://n8n:5678/webhook/image-generator}

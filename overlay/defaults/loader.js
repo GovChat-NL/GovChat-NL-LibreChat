@@ -8,6 +8,7 @@
   const CONFIG = {
     helpContentUrl: "/govchat-overlay/help-content.json",
     appsUrl: "/govchat-overlay/apps.json",
+    beleidskompasConfigUrl: "/govchat-overlay/beleidskompas-config.json",
     appName: document.title || "LibreChat",
     storageKey: "govchat_help_dont_show",
     footerBrandText: "GovChat-NL v0.0.1",
@@ -17,6 +18,7 @@
 
   let helpData = null;
   let appsData = null;
+  let beleidskompasFlowConfig = null;
   let overlayActive = false;
 
   if (document.readyState === "loading") {
@@ -582,6 +584,7 @@
       "gc-help-backdrop",
       "gc-app-backdrop",
       "gc-iframe",
+      "gc-bk",
       "gc-vs",
     ].forEach((id) => {
       const el = document.getElementById(id);
@@ -650,6 +653,18 @@
     if (appsData.enabled === false) {
       const btn = document.getElementById("gc-launcher-btn");
       if (btn) btn.style.display = "none";
+    }
+
+    try {
+      const resp = await fetch(CONFIG.beleidskompasConfigUrl, { cache: "no-store" });
+      if (resp.ok) {
+        const raw = await resp.json();
+        beleidskompasFlowConfig = raw && typeof raw === "object" ? raw : null;
+      } else {
+        beleidskompasFlowConfig = null;
+      }
+    } catch {
+      beleidskompasFlowConfig = null;
     }
   }
 
@@ -766,6 +781,8 @@
 
         if (target === "versimpelaar") {
           openVersimpelaar(app);
+        } else if (target === "beleidskompas") {
+          openBeleidskompas(app);
         } else if (target === "imagegen") {
           openImageGenerator(app);
         } else if (target === "transcriptie") {
@@ -810,6 +827,550 @@
     document.body.appendChild(container);
     document.getElementById("gc-iframe-back")?.addEventListener("click", () => openAppOverviewFromMiniApp(container));
     document.getElementById("gc-iframe-close")?.addEventListener("click", () => container.remove());
+  }
+
+  function openBeleidskompas(app) {
+    if (document.getElementById("gc-bk")) return;
+
+    const cfg = {
+      ...(app?.config && typeof app.config === "object" ? app.config : {}),
+      ...(beleidskompasFlowConfig && typeof beleidskompasFlowConfig === "object" ? beleidskompasFlowConfig : {}),
+    };
+    const orchestratorWebhookPath = String(cfg.orchestrator_webhook_path || "beleidskompas-hoofdagent").trim() || "beleidskompas-hoofdagent";
+    const orchestratorWebhookUrl = `${window.location.origin}/n8n/webhook/${orchestratorWebhookPath}`;
+    const webhookToken = String(cfg.webhook_token || "").trim();
+    const specialistTeam = String(
+      cfg.specialist_team ||
+        "Schakel bij complexe juridische, financiële of politiek-bestuurlijke casussen een specialistenteam in."
+    ).trim();
+    const defaultSources = Array.isArray(cfg.sources) && cfg.sources.length
+      ? cfg.sources
+      : [
+          "SiS 4.0 Strategisch kader",
+          "SiS 4.0 Uitvoeringskader",
+          "Provinciale Instrumentenkoffer",
+          "Coalitieakkoord en beleidskaders",
+          "Overzicht wettelijke taken Provincie",
+        ];
+
+    const fallbackSteps = [
+      {
+        id: "stap1",
+        nr: 1,
+        title: "Publiek en provinciaal belang",
+        short: "Bepaal probleem, publiek belang en provinciale legitimiteit.",
+        info:
+          "Toets of het vraagstuk publiek relevant is, binnen provinciale wettelijke taken valt en expliciet past binnen coalitieakkoord en beleidskaders.",
+        help: [
+          "Welk concreet maatschappelijk probleem wil je oplossen?",
+          "Wie ondervindt nadeel als de provincie niet handelt?",
+          "Welke wettelijke of bestuurlijke grondslag legitimeert provinciaal handelen?",
+        ],
+        deep: [
+          "Welke groepen hebben conflicterende belangen en waarom?",
+          "Welke juridische, financiële en organisatorische randvoorwaarden begrenzen het handelen?",
+        ],
+      },
+      {
+        id: "stap2",
+        nr: 2,
+        title: "Rolbepaling provincie",
+        short: "Kies passende rol(len): regulerend, regisserend, stimulerend, faciliterend.",
+        info:
+          "Onderbouw waarom een rol passend is bij doel, bevoegdheid, bestuurlijke context en uitvoerbaarheid. Combineer rollen alleen als dit uitlegbaar en bestuurbaar is.",
+        help: [
+          "Welke rol heeft de hoogste effectiviteit gegeven urgentie en mandaat?",
+          "Welke rol biedt de beste balans tussen impact, kosten en bestuurlijke haalbaarheid?",
+          "Is een rolcombinatie nodig of ontstaat dan juist complexiteit?",
+        ],
+        deep: [
+          "Welke governance-risico’s ontstaan bij deze rolkeuze?",
+          "Welke afhankelijkheden met ketenpartners zijn kritiek?",
+        ],
+      },
+      {
+        id: "stap3",
+        nr: 3,
+        title: "Instrumentkeuze",
+        short: "Weeg en vergelijk instrumenten met score en argumentatie.",
+        info:
+          "Gebruik de Provinciale Instrumentenkoffer en beoordeel instrumenten op effectiviteit, uitvoerbaarheid, juridische robuustheid, betaalbaarheid en maatschappelijke impact.",
+        help: [
+          "Welke instrumenten zijn realistisch beschikbaar binnen planning en capaciteit?",
+          "Wat is het voorkeursinstrument en waarom?",
+          "Welke twee alternatieven zijn serieus en bestuurlijk verdedigbaar?",
+        ],
+        deep: [
+          "Welke risico’s, neveneffecten en mitigerende maatregelen horen per optie?",
+          "Welke bron onderbouwt elke score of aanname?",
+        ],
+      },
+      {
+        id: "stap4",
+        nr: 4,
+        title: "Governance-inrichting",
+        short: "Adviseer sturing, toezicht, beheersing en verantwoording.",
+        info:
+          "Sluit aan op hoofdstuk 10 van SiS 4.0 en het uitvoeringskader: wie stuurt, wie houdt toezicht, welke KPI’s gelden en hoe wordt verantwoord.",
+        help: [
+          "Welke governance-structuur past bij het gekozen instrument?",
+          "Hoe richt je besluitvorming, escalatie en verantwoordingslijnen in?",
+          "Welke monitoring/KPI’s zijn nodig voor bestuurlijke bijsturing?",
+        ],
+        deep: [
+          "Welke governance-implicaties gelden voor alternatieve instrumenten?",
+          "Welke kwaliteitspoorten en validatiestappen voorkómen ongecontroleerde AI-output?",
+        ],
+      },
+    ];
+
+    const steps = Array.isArray(cfg.steps) && cfg.steps.length
+      ? cfg.steps.map((step, idx) => {
+          const fb = fallbackSteps[Math.min(idx, fallbackSteps.length - 1)] || fallbackSteps[0];
+          const substeps = Array.isArray(step?.substeps) ? step.substeps : [];
+          return {
+            id: String(step?.id || `stap${idx + 1}`).trim() || `stap${idx + 1}`,
+            nr: idx + 1,
+            title: String(step?.title || fb.title || `Stap ${idx + 1}`).trim(),
+            short: String(step?.description || fb.short || "").trim() || fb.short,
+            info: String(step?.prompt || step?.description || fb.info || "").trim() || fb.info,
+            help: substeps.length
+              ? substeps.map((s) => String(s?.title || "").trim()).filter(Boolean)
+              : fb.help,
+            deep: substeps.length
+              ? substeps
+                  .map((s) => String(s?.description || "").trim())
+                  .filter(Boolean)
+                  .slice(0, 4)
+              : fb.deep,
+          };
+        })
+      : fallbackSteps;
+
+    const initialStepState = () => ({
+      report_text: "",
+      citations: [],
+      retrieval_trace: null,
+      updated_at: "",
+    });
+
+    const state = {
+      activeStep: 0,
+      messages: [
+        {
+          role: "assistant",
+          text: "Hallo! Ik ben je beleidsassistent. Beschrijf je casus en ik help je stap voor stap.",
+          ts: new Date().toISOString(),
+          citations: [],
+          retrieval_trace: null,
+        },
+      ],
+      steps: {},
+    };
+
+    steps.forEach((s) => {
+      state.steps[s.id] = initialStepState();
+    });
+
+    const groupedSteps = [
+      { title: "Stap 1", items: steps.slice(0, 2) },
+      { title: "Stap 2", items: steps.slice(2, 4) },
+      { title: "Stap 3", items: steps.slice(4) },
+    ].filter((g) => g.items.length > 0);
+
+    const container = document.createElement("div");
+    container.id = "gc-bk";
+    container.innerHTML = `
+      <div class="gc-bk-shell">
+        <aside class="gc-bk-sidebar">
+          <div class="gc-bk-brand">
+            <div class="gc-bk-brand-logo">🧭</div>
+            <div>
+              <div class="gc-bk-brand-title">${escapeHTML(String(cfg.title || "Beleidskompas assistant"))}</div>
+              <div class="gc-bk-brand-sub">Provincie assistent</div>
+            </div>
+          </div>
+          <button id="gc-bk-new-chat" class="gc-bk-new-chat" type="button">✎ Nieuwe chat</button>
+          <div id="gc-bk-step-groups" class="gc-bk-step-groups"></div>
+        </aside>
+
+        <section class="gc-bk-chat">
+          <div class="gc-bk-chat-head">
+            <div class="gc-mini-head-left">
+              <button id="gc-bk-back" class="gc-mini-nav-btn" type="button">← Overzicht</button>
+              <strong>Beleidskompas</strong>
+            </div>
+            <button id="gc-bk-close" class="gc-bk-close" type="button">✕</button>
+          </div>
+          <div class="gc-bk-chat-note">${escapeHTML(String(cfg.disclaimer || "Ondersteunend hulpmiddel, geen automatische besluitvorming."))}</div>
+          <div id="gc-bk-chat-log" class="gc-bk-chat-log"></div>
+          <div class="gc-bk-chat-compose">
+            <input id="gc-bk-chat-input" type="text" placeholder="Stel een vraag..." />
+            <button id="gc-bk-send" type="button">➤</button>
+          </div>
+        </section>
+
+        <section class="gc-bk-form">
+          <div class="gc-bk-form-head">
+            <div>
+              <h3 id="gc-bk-form-title"></h3>
+              <div id="gc-bk-form-short" class="gc-bk-form-short"></div>
+            </div>
+            <div class="gc-bk-step-nav">
+              <button id="gc-bk-prev" type="button">‹</button>
+              <button id="gc-bk-next" type="button">›</button>
+            </div>
+          </div>
+
+          <div id="gc-bk-report-status" class="gc-bk-chat-note"></div>
+          <pre id="gc-bk-report-body" class="gc-bk-doc-body">Nog geen tussentijds rapport voor deze stap. Stel links in de chat je vraag om de analyse voor deze stap op te bouwen.</pre>
+          <div id="gc-bk-report-meta" class="gc-bk-form-short"></div>
+          <div id="gc-bk-report-sources" class="gc-bk-citations"></div>
+
+          <div class="gc-bk-form-actions">
+            <button id="gc-bk-save-step" type="button">Markeer stap gereed</button>
+            <button id="gc-bk-next-step" type="button">Volgende stap</button>
+          </div>
+        </section>
+      </div>`;
+
+    document.body.appendChild(container);
+
+    const closeBtn = document.getElementById("gc-bk-close");
+    const backBtn = document.getElementById("gc-bk-back");
+    const newChatBtn = document.getElementById("gc-bk-new-chat");
+    const stepGroupsEl = document.getElementById("gc-bk-step-groups");
+    const chatLogEl = document.getElementById("gc-bk-chat-log");
+    const chatInputEl = document.getElementById("gc-bk-chat-input");
+    const sendBtn = document.getElementById("gc-bk-send");
+    const formTitleEl = document.getElementById("gc-bk-form-title");
+    const formShortEl = document.getElementById("gc-bk-form-short");
+    const prevBtn = document.getElementById("gc-bk-prev");
+    const nextBtn = document.getElementById("gc-bk-next");
+    const saveStepBtn = document.getElementById("gc-bk-save-step");
+    const nextStepBtn = document.getElementById("gc-bk-next-step");
+    const reportStatusEl = document.getElementById("gc-bk-report-status");
+    const reportBodyEl = document.getElementById("gc-bk-report-body");
+    const reportMetaEl = document.getElementById("gc-bk-report-meta");
+    const reportSourcesEl = document.getElementById("gc-bk-report-sources");
+
+    function normalizeCitations(input) {
+      if (!Array.isArray(input)) return [];
+      return input
+        .map((c, idx) => ({
+          rank: Number(c?.rank || idx + 1),
+          id: String(c?.id || "").trim(),
+          filename: String(c?.filename || `Document ${idx + 1}`).trim() || `Document ${idx + 1}`,
+          score: Number(c?.score || 0),
+          tags: Array.isArray(c?.tags) ? c.tags.map((t) => String(t || "").trim()).filter(Boolean) : [],
+          preview: String(c?.preview || "").trim(),
+        }))
+        .filter((c) => c.id || c.filename);
+    }
+
+    function addMessage(role, text, meta = {}) {
+      state.messages.push({
+        role,
+        text: String(text || "").trim(),
+        ts: new Date().toISOString(),
+        citations: normalizeCitations(meta?.citations),
+        retrieval_trace: meta?.retrieval_trace || null,
+      });
+      renderChat();
+    }
+
+    function formatTime(ts) {
+      const d = new Date(ts);
+      return d.toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit" });
+    }
+
+    function citationLabel(citation) {
+      const nr = Number(citation?.rank || 0) || 1;
+      const score = Number(citation?.score || 0);
+      return Number.isFinite(score) && score > 0 ? `#${nr} · score ${score.toFixed(3)}` : `#${nr}`;
+    }
+
+    function renderChat() {
+      if (!chatLogEl) return;
+      chatLogEl.innerHTML = state.messages
+        .map(
+          (m) => `
+            <div class="gc-bk-msg gc-bk-msg-${escapeAttr(m.role)}">
+              <div class="gc-bk-msg-text">${escapeHTML(m.text)}</div>
+              ${Array.isArray(m.citations) && m.citations.length
+                ? `<div class="gc-bk-citations">${m.citations
+                    .map(
+                      (c) =>
+                        `<button type="button" class="gc-bk-citation-btn" data-doc-id="${escapeAttr(c.id)}" data-doc-filename="${escapeAttr(c.filename)}" data-doc-score="${escapeAttr(String(c.score || 0))}" data-doc-tags="${escapeAttr((c.tags || []).join(", "))}" data-doc-preview="${escapeAttr(c.preview || "")}"><span class="gc-bk-citation-file">${escapeHTML(c.filename)}</span><span class="gc-bk-citation-meta">${escapeHTML(citationLabel(c))}</span></button>`
+                    )
+                    .join("")}</div>`
+                : ""}
+              <div class="gc-bk-msg-time">${escapeHTML(formatTime(m.ts))}</div>
+            </div>`
+        )
+        .join("");
+      chatLogEl.scrollTop = chatLogEl.scrollHeight;
+    }
+
+    function openCitationPreview(meta) {
+      const docId = String(meta?.id || "").trim();
+      const filename = String(meta?.filename || "Document").trim() || "Document";
+      const scoreVal = Number(meta?.score || 0);
+      const score = Number.isFinite(scoreVal) ? scoreVal.toFixed(4) : "-";
+      const tags = Array.isArray(meta?.tags) ? meta.tags.filter(Boolean) : [];
+      const preview = String(meta?.preview || "").trim() || "Geen preview beschikbaar voor deze bron.";
+      const tagsLabel = tags.length ? tags.join(", ") : "geen tags";
+
+      const existing = document.getElementById("gc-bk-doc-preview");
+      if (existing) existing.remove();
+
+      const modal = document.createElement("div");
+      modal.id = "gc-bk-doc-preview";
+      modal.className = "gc-bk-doc-modal";
+      modal.innerHTML = `
+        <div class="gc-bk-doc-dialog" role="dialog" aria-modal="true" aria-label="Bronpreview">
+          <div class="gc-bk-doc-head">
+            <div>
+              <div class="gc-bk-doc-title">${escapeHTML(filename)}</div>
+              <div class="gc-bk-doc-meta">ID: ${escapeHTML(docId || "-")} · score: ${escapeHTML(score)} · tags: ${escapeHTML(tagsLabel)}</div>
+            </div>
+            <button type="button" class="gc-bk-doc-close" aria-label="Sluiten">✕</button>
+          </div>
+          <pre class="gc-bk-doc-body">${escapeHTML(preview)}</pre>
+        </div>`;
+      document.body.appendChild(modal);
+
+      const close = () => modal.remove();
+      modal.querySelector(".gc-bk-doc-close")?.addEventListener("click", close);
+      modal.addEventListener("click", (e) => {
+        if (e.target === modal) close();
+      });
+    }
+
+    function renderStepGroups() {
+      if (!stepGroupsEl) return;
+      stepGroupsEl.innerHTML = groupedSteps
+        .map(
+          (group) => `
+            <section class="gc-bk-step-group">
+              <h4>${escapeHTML(group.title)}</h4>
+              ${group.items
+                .map((s) => {
+                  const idx = steps.findIndex((x) => x.id === s.id);
+                  const activeClass = idx === state.activeStep ? "is-active" : "";
+                  return `
+                    <button type="button" class="gc-bk-step-link ${activeClass}" data-step-index="${idx}">
+                      <span class="gc-bk-step-link-nr">${s.nr}</span>
+                      <span class="gc-bk-step-link-title">${escapeHTML(s.title)}</span>
+                    </button>`;
+                })
+                .join("")}
+            </section>`
+        )
+        .join("");
+
+      stepGroupsEl.querySelectorAll("[data-step-index]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const idx = Number(btn.getAttribute("data-step-index"));
+          if (!Number.isFinite(idx)) return;
+          state.activeStep = Math.max(0, Math.min(steps.length - 1, idx));
+          renderStepGroups();
+          renderStepForm();
+        });
+      });
+    }
+
+    function activeStep() {
+      return steps[state.activeStep] || steps[0];
+    }
+
+    function renderStepForm() {
+      const step = activeStep();
+      const data = state.steps[step.id] || initialStepState();
+      if (formTitleEl) formTitleEl.textContent = `Stap ${step.nr} · ${step.title}`;
+      if (formShortEl) formShortEl.textContent = step.short || "";
+      if (reportStatusEl) {
+        reportStatusEl.textContent = data.report_text
+          ? `Tussentijds rapport beschikbaar voor stap ${step.nr}.`
+          : `Nog geen tussentijds rapport voor stap ${step.nr}. Stel links in de chat je vraag om de analyse op te bouwen.`;
+      }
+      if (reportBodyEl) {
+        reportBodyEl.textContent =
+          data.report_text ||
+          "Nog geen tussentijds rapport voor deze stap. Stel links in de chat je vraag om de analyse voor deze stap op te bouwen.";
+      }
+      if (reportMetaEl) {
+        const trace = data.retrieval_trace || null;
+        const traceText = trace
+          ? `RAG: ${String(trace.algorithm || "-")} · top_k: ${Number(trace.top_k || 0)} · matched_docs: ${Number(
+              trace.matched_docs || 0,
+            )}`
+          : "RAG: nog geen trace";
+        const tsText = data.updated_at ? ` · bijgewerkt: ${formatTime(data.updated_at)}` : "";
+        reportMetaEl.textContent = `${traceText}${tsText}`;
+      }
+      if (reportSourcesEl) {
+        const citations = normalizeCitations(data.citations);
+        reportSourcesEl.innerHTML = citations.length
+          ? citations
+              .map(
+                (c) =>
+                  `<button type="button" class="gc-bk-citation-btn" data-doc-id="${escapeAttr(c.id)}" data-doc-filename="${escapeAttr(
+                    c.filename,
+                  )}" data-doc-score="${escapeAttr(String(c.score || 0))}" data-doc-tags="${escapeAttr(
+                    (c.tags || []).join(", "),
+                  )}" data-doc-preview="${escapeAttr(c.preview || "")}"><span class="gc-bk-citation-file">${escapeHTML(
+                    c.filename,
+                  )}</span><span class="gc-bk-citation-meta">${escapeHTML(citationLabel(c))}</span></button>`,
+              )
+              .join("")
+          : '<span class="gc-bk-form-short">Nog geen bronverwijzingen voor deze stap.</span>';
+      }
+      if (prevBtn) prevBtn.disabled = state.activeStep <= 0;
+      if (nextBtn) nextBtn.disabled = state.activeStep >= steps.length - 1;
+      if (nextStepBtn) nextStepBtn.disabled = state.activeStep >= steps.length - 1;
+    }
+
+    function persistActiveStep() {
+      const step = activeStep();
+      if (!state.steps[step.id]) state.steps[step.id] = initialStepState();
+    }
+
+    async function requestHoofdagent(userText) {
+      const step = activeStep();
+      const d = state.steps[step.id] || initialStepState();
+      const priorReports = steps
+        .slice(0, state.activeStep)
+        .map((s) => String(state.steps[s.id]?.report_text || "").trim())
+        .filter(Boolean)
+        .join("\n\n");
+      const payload = {
+        step_id: String(step.id || "").trim(),
+        step_title: String(step.title || "").trim(),
+        question: String(userText || "").trim(),
+        case_text: String(priorReports || d.report_text || "").trim(),
+        step_fields: {
+          prior_step_reports: String(priorReports || "").trim(),
+          current_step_report: String(d.report_text || "").trim(),
+          references: defaultSources.join("; "),
+        },
+      };
+
+      const headers = {
+        "Content-Type": "application/json",
+        ...(webhookToken ? { "x-govchat-token": webhookToken } : {}),
+      };
+
+      const resp = await fetch(orchestratorWebhookUrl, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(payload),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        throw new Error(String(data?.error || `Hoofdagent gaf HTTP ${resp.status}`));
+      }
+      const answer = String(data?.answer || data?.text || "").trim();
+      if (!answer) throw new Error("Hoofdagent gaf geen antwoord terug");
+      return {
+        answer,
+        citations: normalizeCitations(data?.citations),
+        retrieval_trace: data?.retrieval_trace || null,
+      };
+    }
+
+    async function sendUserMessage() {
+      const text = String(chatInputEl?.value || "").trim();
+      if (!text) return;
+      addMessage("user", text);
+      if (chatInputEl) chatInputEl.value = "";
+      persistActiveStep();
+      try {
+        const result = await requestHoofdagent(text);
+        const step = activeStep();
+        state.steps[step.id] = {
+          report_text: String(result.answer || "").trim(),
+          citations: normalizeCitations(result.citations),
+          retrieval_trace: result.retrieval_trace || null,
+          updated_at: new Date().toISOString(),
+        };
+        addMessage("assistant", result.answer, { citations: result.citations, retrieval_trace: result.retrieval_trace });
+        renderStepForm();
+      } catch (err) {
+        addMessage(
+          "assistant",
+          `Hoofdagent niet bereikbaar of fout: ${String(err?.message || err)}. Controleer workflow-sync/token/webhook pad in Beleidskompas Admin.`,
+        );
+      }
+    }
+
+    closeBtn?.addEventListener("click", () => container.remove());
+    backBtn?.addEventListener("click", () => openAppOverviewFromMiniApp(container));
+    newChatBtn?.addEventListener("click", () => {
+      state.messages = [
+        {
+          role: "assistant",
+          text: "Nieuwe sessie gestart. Beschrijf je casus en we lopen de stappen samen door.",
+          ts: new Date().toISOString(),
+          citations: [],
+          retrieval_trace: null,
+        },
+      ];
+      renderChat();
+    });
+    sendBtn?.addEventListener("click", sendUserMessage);
+    chatInputEl?.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        sendUserMessage();
+      }
+    });
+    chatLogEl?.addEventListener("click", (e) => {
+      const target = e.target && typeof e.target.closest === "function" ? e.target.closest(".gc-bk-citation-btn") : null;
+      if (!target) return;
+      openCitationPreview({
+        id: target.getAttribute("data-doc-id") || "",
+        filename: target.getAttribute("data-doc-filename") || "Document",
+        score: Number(target.getAttribute("data-doc-score") || 0),
+        tags: String(target.getAttribute("data-doc-tags") || "")
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean),
+        preview: target.getAttribute("data-doc-preview") || "",
+      });
+    });
+
+    prevBtn?.addEventListener("click", () => {
+      persistActiveStep();
+      state.activeStep = Math.max(0, state.activeStep - 1);
+      renderStepGroups();
+      renderStepForm();
+    });
+    nextBtn?.addEventListener("click", () => {
+      persistActiveStep();
+      state.activeStep = Math.min(steps.length - 1, state.activeStep + 1);
+      renderStepGroups();
+      renderStepForm();
+    });
+
+    saveStepBtn?.addEventListener("click", () => {
+      persistActiveStep();
+      const step = activeStep();
+      addMessage("assistant", `Stap ${step.nr} opgeslagen. Wil je verder met de volgende stap?`);
+    });
+    nextStepBtn?.addEventListener("click", () => {
+      persistActiveStep();
+      if (state.activeStep < steps.length - 1) {
+        state.activeStep += 1;
+        renderStepGroups();
+        renderStepForm();
+        addMessage("assistant", `Doorgaan naar stap ${activeStep().nr}: ${activeStep().title}.`);
+      }
+    });
+
+    renderStepGroups();
+    renderChat();
+    renderStepForm();
   }
 
   function openVersimpelaar(app) {
@@ -1270,7 +1831,7 @@
     const webhook = String(app.url || "").trim();
     const cfg = app.config || {};
     const webhookToken = String(cfg.webhook_token || "").trim();
-    const model = String(cfg.litellm_model || "whisper").trim() || "whisper";
+    const model = String(cfg.litellm_model || "gpt-4o-transcribe").trim() || "gpt-4o-transcribe";
     const defaultLanguage = String(cfg.language || "nl").trim() || "nl";
     const realtimeEnabled = false;
     const realtimeUrl = String(cfg.realtime_url || "/govchat-api/realtime-stt").trim() || "/govchat-api/realtime-stt";
