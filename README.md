@@ -11,12 +11,25 @@
 - Bekende beperkingen: onderdelen kunnen incompleet, experimenteel of omgeving-afhankelijk zijn.
 - Verwachte inzet: inspiratie voor aanbesteding, leveranciersdialoog en doorontwikkeling binnen overheidscontext.
 
-Deze variant houdt het bewust simpel:
+## Huidige scope van deze repository
 
-- OpenWebUI is vervangen door LibreChat
-- GovChat overlay blijft actief (help + app launcher)
-- n8n is inbegrepen voor een Orchestrator-agent + Versimpelaar B1 sub-agent (via LiteLLM)
-- RAG/pgvector/pgadmin zijn optioneel via compose-profielen
+Deze stack is in de praktijk breder dan alleen “orchestrator + versimpelaar”. De huidige repository bevat:
+
+- **LibreChat + GovChat overlay** (help + app launcher) via [`overlay/defaults/loader.js`](overlay/defaults/loader.js) en [`overlay/defaults/apps.json`](overlay/defaults/apps.json).
+- **n8n-gedreven agentarchitectuur** met orchestrator en specialist-workflows, geïmporteerd via [`n8n-bootstrap`](docker-compose.yml:533) en workflowbestanden uit [`GovChat-NL-Agents`](../GovChat-NL-Agents/README.md).
+- **LibreChat ↔ n8n OpenAI bridge** via [`n8n-openai-bridge`](docker-compose.yml:893).
+- **Werkende test-apps in de overlay**:
+  - Versimpelaar
+  - Live transcriptie
+  - Afbeelding-generator (async image jobs)
+  - Beleidskompas (conceptueel / in ontwikkeling)
+  - Crawler-koppeling (conceptueel / in ontwikkeling)
+- **RAG-gerelateerde componenten optioneel** via profielen in [`docker-compose.yml`](docker-compose.yml):
+  - `pgvector`
+  - `rag-api`
+  - `pgadmin`
+
+> Let op: in deze specifieke stack staan `pgvector` + `rag-api` centraal voor optionele RAG-profielen. Qdrant wordt elders in GovChat-context genoemd, maar is geen standaardservice in deze compose.
 
 ## Services in de standaard (simpele) start
 
