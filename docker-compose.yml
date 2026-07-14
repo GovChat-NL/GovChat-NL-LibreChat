@@ -64,18 +64,18 @@ services:
       SESSION_SECRET: ${SESSION_SECRET}
 
       # --- Registratie en login ---
-      ALLOW_REGISTRATION: "true"
-      ALLOW_EMAIL_LOGIN: "true"
+      ALLOW_REGISTRATION: ${DEV_SEED_ADMIN_ENABLED}
+      ALLOW_EMAIL_LOGIN: ${DEV_SEED_ADMIN_ENABLED}
       ALLOW_SOCIAL_LOGIN: "true"
       ALLOW_SOCIAL_REGISTRATION: "true"
-      ALLOW_UNVERIFIED_EMAIL_LOGIN: "true"
+      ALLOW_UNVERIFIED_EMAIL_LOGIN: "false"
 
       # --- Entra ID SSO (OpenID Connect) ---
       OPENID_CLIENT_ID: ${OPENID_CLIENT_ID}
       OPENID_CLIENT_SECRET: ${OPENID_CLIENT_SECRET}
       OPENID_ISSUER: https://login.microsoftonline.com/${ENTRA_TENANT_ID}/v2.0/
       OPENID_SESSION_SECRET: ${OPENID_SESSION_SECRET}
-      OPENID_SCOPE: api://eb01ffc3-f8e3-4945-84dd-157ac2de8c34/.default openid profile email offline_access
+      OPENID_SCOPE: openid profile email offline_access
       OPENID_CALLBACK_URL: /oauth/openid/callback
       OPENID_BUTTON_LABEL: Inloggen met Microsoft
       OPENID_USE_END_SESSION_ENDPOINT: "true"
@@ -143,12 +143,13 @@ services:
     restart: "no"
     command: >
       sh -lc "
-        mkdir -p /app/uploads/temp &&
-        chown -R 1000:1000 /app/uploads &&
-        chmod -R u+rwX,g+rwX /app/uploads
+        mkdir -p /app/uploads/temp /app/images &&
+        chown -R 1000:1000 /app/uploads /app/images &&
+        chmod -R u+rwX,g+rwX /app/uploads /app/images
       "
     volumes:
       - /opt/librechat/uploads:/app/uploads
+      - /opt/librechat/images:/app/images
     networks:
       - librechat-net
 
