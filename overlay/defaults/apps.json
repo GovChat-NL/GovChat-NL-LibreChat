@@ -24,7 +24,9 @@
       "url": "/n8n/webhook/versimpelaar",
       "target": "versimpelaar",
       "config": {
-        "language_levels": ["B1"],
+        "language_levels": [
+          "B1"
+        ],
         "default_level": "B1",
         "webhook_token": "local_n8n_webhook_token_change_me"
       }
@@ -93,4 +95,3 @@
     }
   ]
 }
-
