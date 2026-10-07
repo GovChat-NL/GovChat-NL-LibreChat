@@ -47,14 +47,30 @@ De huidige workflowassets staan in deze repository, zodat ze als standaard GovCh
 
 - [`openbesluitvorming-document-worker.json`](n8n/workflows/openbesluitvorming/openbesluitvorming-document-worker.json): haalt volledige documentinhoud op, verwerkt deze in begrensde embedding-batches en maakt per document een vector met gewogen mean pooling.
 - [`openbesluitvorming-ingest.json`](n8n/workflows/openbesluitvorming/openbesluitvorming-ingest.json): verwerkt één cursorpagina per uitvoering, bewaart een duurzaam checkpoint in Qdrant en registreert individuele dead letters zonder de rest van de ingest te stoppen.
+- [`openbesluitvorming-search.json`](n8n/workflows/openbesluitvorming/openbesluitvorming-search.json): zoekt met hoge recall via zichtbare n8n-stappen voor query-varianten, brede Qdrant-kandidaten, document-level reciprocal-rank fusion, optionele LiteLLM-reranking en een dynamische output met bronverwijzingen.
+- [`orchestrator-openbesluitvorming.json`](n8n/workflows/openbesluitvorming/orchestrator-openbesluitvorming.json): bouwt voort op de bestaande GovChat-orchestrator en voegt de zoektool toe voor vragen over openbare besluitvorming.
 
-Beide workflows zijn bewust **inactief** en bevatten geen organisatie- of collectie-specifieke standaardwaarde. Stel vóór activering in de zichtbare configuratienode minimaal `sourceKey` en `collection` in. Raadpleeg daarbij de [OpenBesluitvorming API-documentatie](https://openbesluitvorming.nl/docs/api) voor de beschikbare bronnen, snapshot-cursors en entiteitseigenschappen.
+De ingest- en zoekworkflow zijn bewust **inactief** en bevatten geen organisatie- of collectie-specifieke standaardwaarde. Stel vóór activering in de zichtbare configuratienode minimaal `sourceKey` en `collection` in. Raadpleeg daarbij de [OpenBesluitvorming API-documentatie](https://openbesluitvorming.nl/docs/api) voor de beschikbare bronnen, snapshot-cursors en entiteitseigenschappen.
+
+### Zoekkwaliteit, herleidbaarheid en politieke zorgvuldigheid
+
+De zoekworkflow is gebaseerd op de bestaande kandidaat- en rerankopzet, maar is generiek gemaakt en gericht op het verkleinen van het risico dat relevante documenten stilzwijgend wegvallen:
+
+1. de oorspronkelijke vraag wordt aangevuld met begrensde zoekvarianten, waaronder onderscheidende termen en aangehaalde frases;
+2. elke variant haalt een brede kandidaatset op (`candidate_limit`, standaard 160 per variant) en kan optioneel op `source_key` filteren;
+3. kandidaten worden op brondocumentniveau samengevoegd met reciprocal-rank fusion, zodat een document dat bij meerdere formuleringen terugkomt extra gewicht krijgt;
+4. maximaal 100 unieke documenten gaan standaard naar de reranker; als reranking faalt, blijft de gefuseerde brede kandidaatset bruikbaar en wordt die fallback expliciet gemarkeerd;
+5. elk resultaat bevat herleidbare bronvelden, zoals `source_id`, titel, datum en beschikbare originele/download/PDF-URL's, plus `candidate_pool`-statistiek en `coverage_notice`.
+
+Dit is nadrukkelijk **geen volledigheidsgarantie**. Vectorzoekresultaten bewijzen niet dat alle relevante publieke stukken zijn gevonden. Bij politiek gevoelige vragen moet de orchestrator daarom de zoektool gebruiken, bronlinks in het antwoord tonen, geen niet-gevonden informatie invullen en de dekkingbeperking communiceren. Herhaal zo nodig de zoekopdracht met andere bewoordingen, verhoog `candidate_limit`/`result_limit`, verwijder of verbreed filters en controleer de primaire documenten.
+
+Belangrijkste toolparameters: `query`, optioneel `source_key`, `collection`, `candidate_limit` (50–500), `rerank_limit` (20–200), `result_limit` (10–100) en `include_content`. De standaardcollectie heet `openbesluitvorming`; kies in een concrete installatie de collectie die bij die ingest hoort.
 
 De geplande vervolgstappen op deze branch zijn:
 
-1. een OpenBesluitvorming-zoekworkflow toevoegen die Qdrant-resultaten met bronmetadata teruggeeft;
-2. de gevalideerde punten voor Provincie Limburg gecontroleerd beschikbaar maken;
-3. gebruikers- en beheerdocumentatie uitbreiden met configuratie, filtering, bronverwijzing, beheer van dead letters en operationele controles.
+1. de gevalideerde punten voor Provincie Limburg gecontroleerd beschikbaar maken;
+2. gebruikers- en beheerdocumentatie uitbreiden met configuratie, filtering, bronverwijzing, beheer van dead letters en operationele controles;
+3. retrieval-evaluaties toevoegen met representatieve politieke vragen, alternatieve formuleringen en gecontroleerde bronverwijzingen.
 
 ## Services in de standaard (simpele) start
 
