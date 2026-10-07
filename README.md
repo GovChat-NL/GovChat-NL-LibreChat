@@ -31,6 +31,31 @@ Deze stack is in de praktijk breder dan alleen “orchestrator + versimpelaar”
 
 > Let op: in deze specifieke stack staan `pgvector` + `rag-api` centraal voor optionele RAG-profielen. Qdrant wordt elders in GovChat-context genoemd, maar is geen standaardservice in deze compose.
 
+## OpenBesluitvorming: open publieke besluitvorming als kernfunctie
+
+GovChat-NL ondersteunt [OpenBesluitvorming](https://openbesluitvorming.nl/): de open infrastructuur voor het toegankelijk maken van publieke besluitvorming. We bedanken de makers en bijdragers van het project voor hun werk aan een open, herbruikbare basis voor overheidsinformatie.
+
+- Website: [openbesluitvorming.nl](https://openbesluitvorming.nl/)
+- Broncode en samenwerking: [ontola/openbesluitvorming](https://github.com/ontola/openbesluitvorming)
+- API-documentatie: [openbesluitvorming.nl/docs/api](https://openbesluitvorming.nl/docs/api)
+
+We adopteren OpenBesluitvorming als kernfunctionaliteit van GovChat-NL: de chat moet publieke besluitvorming niet alleen kunnen samenvatten, maar ook herleidbaar kunnen doorzoeken en daarover kunnen antwoorden met broncontext. De implementatie op de branch `feature/openbesluitvorming` levert hiervoor de eerste bouwsteen: een generieke, inactieve n8n-ingestflow die een organisatie-snapshot via de OpenBesluitvorming-API verwerkt, documentmetadata bewaart en embeddings in een private Qdrant-collectie schrijft.
+
+### Huidige implementatiestatus en vervolgstappen
+
+De huidige workflowassets staan in deze repository, zodat ze als standaard GovChat-NL-workflows kunnen worden gebootstrapt:
+
+- [`openbesluitvorming-document-worker.json`](n8n/workflows/openbesluitvorming/openbesluitvorming-document-worker.json): haalt volledige documentinhoud op, verwerkt deze in begrensde embedding-batches en maakt per document een vector met gewogen mean pooling.
+- [`openbesluitvorming-ingest.json`](n8n/workflows/openbesluitvorming/openbesluitvorming-ingest.json): verwerkt één cursorpagina per uitvoering, bewaart een duurzaam checkpoint in Qdrant en registreert individuele dead letters zonder de rest van de ingest te stoppen.
+
+Beide workflows zijn bewust **inactief** en bevatten geen organisatie- of collectie-specifieke standaardwaarde. Stel vóór activering in de zichtbare configuratienode minimaal `sourceKey` en `collection` in. Raadpleeg daarbij de [OpenBesluitvorming API-documentatie](https://openbesluitvorming.nl/docs/api) voor de beschikbare bronnen, snapshot-cursors en entiteitseigenschappen.
+
+De geplande vervolgstappen op deze branch zijn:
+
+1. een OpenBesluitvorming-zoekworkflow toevoegen die Qdrant-resultaten met bronmetadata teruggeeft;
+2. de gevalideerde punten voor Provincie Limburg gecontroleerd beschikbaar maken;
+3. gebruikers- en beheerdocumentatie uitbreiden met configuratie, filtering, bronverwijzing, beheer van dead letters en operationele controles.
+
 ## Services in de standaard (simpele) start
 
 Standaard actief met `docker compose up -d`:
