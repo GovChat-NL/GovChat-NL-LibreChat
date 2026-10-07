@@ -118,7 +118,7 @@
     },
     {
       "parameters": {
-        "description": "Zoek met hoge recall in OpenBesluitvorming voor openbare besluitvorming, documenten, vergaderingen, moties en besluiten. Gebruik deze tool altijd bij politiek gevoelige of feitelijke vragen over zulke bronnen. Input: query; optioneel source_key, collection, candidate_limit (50-500), rerank_limit (20-200), result_limit (10-100), include_content. Citeer source.original_url, source.download_url of source.pdf_url in je antwoord. De coverage_notice in de output is verplicht te respecteren.",
+        "description": "Zoek met hoge recall in OpenBesluitvorming voor openbare besluitvorming, documenten, vergaderingen, moties en besluiten. Gebruik deze tool altijd bij politiek gevoelige of feitelijke vragen over zulke bronnen. Input: query; optioneel source_key, collection, candidate_limit (50-500), rerank_limit (20-200), result_limit (10-100), include_content. The workflow reranks every fused document up to 500; if candidate_pool.excluded_from_rerank exists, state that the candidate boundary was reached and do not represent the result set as complete. Citeer source.original_url, source.download_url of source.pdf_url in je antwoord. De coverage_notice in de output is verplicht te respecteren.",
         "source": "database",
         "workflowId": {
           "__rl": true,

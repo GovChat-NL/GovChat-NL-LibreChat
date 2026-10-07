@@ -57,14 +57,14 @@ De ingest- en zoekworkflow zijn bewust **inactief** en bevatten geen organisatie
 De zoekworkflow is gebaseerd op de bestaande kandidaat- en rerankopzet, maar is generiek gemaakt en gericht op het verkleinen van het risico dat relevante documenten stilzwijgend wegvallen:
 
 1. de oorspronkelijke vraag wordt aangevuld met begrensde zoekvarianten, waaronder onderscheidende termen en aangehaalde frases;
-2. elke variant haalt een brede kandidaatset op (`candidate_limit`, standaard 160 per variant) en kan optioneel op `source_key` filteren;
+2. elke variant haalt een brede kandidaatset op (`candidate_limit`, standaard 500 per variant) en kan optioneel op `source_key` filteren;
 3. kandidaten worden op brondocumentniveau samengevoegd met reciprocal-rank fusion, zodat een document dat bij meerdere formuleringen terugkomt extra gewicht krijgt;
-4. maximaal 100 unieke documenten gaan standaard naar de reranker; als reranking faalt, blijft de gefuseerde brede kandidaatset bruikbaar en wordt die fallback expliciet gemarkeerd;
+4. alle unieke documenten gaan naar de reranker zolang de gefuseerde set hoogstens 500 documenten bevat (dus ook een dossier met 220 documenten); alleen daarboven geldt een harde, auditeerbare capaciteitgrens van 500 met een gerapporteerde fused-scoregrens en aantal uitgesloten kandidaten; als reranking faalt, blijft de gefuseerde brede kandidaatset bruikbaar en wordt die fallback expliciet gemarkeerd;
 5. elk resultaat bevat herleidbare bronvelden, zoals `source_id`, titel, datum en beschikbare originele/download/PDF-URL's, plus `candidate_pool`-statistiek en `coverage_notice`.
 
 Dit is nadrukkelijk **geen volledigheidsgarantie**. Vectorzoekresultaten bewijzen niet dat alle relevante publieke stukken zijn gevonden. Bij politiek gevoelige vragen moet de orchestrator daarom de zoektool gebruiken, bronlinks in het antwoord tonen, geen niet-gevonden informatie invullen en de dekkingbeperking communiceren. Herhaal zo nodig de zoekopdracht met andere bewoordingen, verhoog `candidate_limit`/`result_limit`, verwijder of verbreed filters en controleer de primaire documenten.
 
-Belangrijkste toolparameters: `query`, optioneel `source_key`, `collection`, `candidate_limit` (50–500), `rerank_limit` (20–200), `result_limit` (10–100) en `include_content`. De standaardcollectie heet `openbesluitvorming`; kies in een concrete installatie de collectie die bij die ingest hoort.
+Belangrijkste toolparameters: `query`, optioneel `source_key`, `collection`, `candidate_limit` (50–500, standaard 500), `rerank_limit` (50–500, standaard 500), `result_limit` (10–100) en `include_content`. De standaardcollectie heet `openbesluitvorming`; kies in een concrete installatie de collectie die bij die ingest hoort.
 
 De geplande vervolgstappen op deze branch zijn:
 
