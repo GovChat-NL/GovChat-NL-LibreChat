@@ -40,6 +40,40 @@
         "image_jobs_api": "/govchat-api/image-jobs",
         "image_jobs_token": "local_image_jobs_token_change_me"
       }
+    },
+    {
+      "id": "transcriptie",
+      "name": "Live transcriptie",
+      "icon": "🎙️",
+      "description": "Live spraak-naar-tekst met slimme chunking (VAD, overlap, context)",
+      "url": "/n8n/webhook/transcriptie-litellm",
+      "target": "transcriptie",
+      "config": {
+        "webhook_token": "local_n8n_webhook_token_change_me",
+        "chunk_ms": 5000,
+        "chunk_min_ms": 2200,
+        "chunk_max_ms": 20000,
+        "vad_silence_ms": 900,
+        "vad_threshold": 0.012,
+        "silence_threshold": 0.012,
+        "overlap_ms": 650,
+        "context_prompt": "Nederlands gesprek, maak een complete en nette transcriptie.",
+        "max_duration_minutes": 120,
+        "litellm_model": "whisper",
+        "realtime_enabled": false,
+        "realtime_url": "/govchat-api/realtime-stt",
+        "realtime_provider": "litellm",
+        "realtime_model": "gpt-4o-realtime-preview",
+        "realtime_commit_ms": 1200,
+        "language": "nl",
+        "title_webhook": "/n8n/webhook/transcriptie-title-litellm",
+        "title_webhook_token": "local_n8n_webhook_token_change_me",
+        "title_model": "govchat-default",
+        "title_max_chars": 72,
+        "title_timeout_ms": 6000,
+        "enable_speaker_labels": false,
+        "include_timestamps": true
+      }
     }
   ]
 }
