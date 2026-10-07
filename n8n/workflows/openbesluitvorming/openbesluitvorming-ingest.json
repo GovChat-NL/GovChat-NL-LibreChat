@@ -1,7 +1,7 @@
 {
-  "id": "govchat-openraadsinformatie-ingest",
-  "name": "OpenRaadsinformatie - Checkpointed Ingest",
-  "description": "Inactive, generic OpenRaadsinformatie full-snapshot ingest. Configure the organisation and collection in node 2 before activation. Each execution handles one bounded page and commits a durable Qdrant checkpoint.",
+  "id": "govchat-openbesluitvorming-ingest",
+  "name": "OpenBesluitvorming - Checkpointed Ingest",
+  "description": "Inactive, generic Open Besluitvorming full-snapshot ingest. Configure the organisation and collection in node 2 before activation. Each execution handles one bounded page and commits a durable Qdrant checkpoint.",
   "active": false,
   "settings": {
     "executionOrder": "v1",
@@ -43,7 +43,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Set these values before activating this workflow.\nconst sourceKey = 'your_organisation';\nconst collection = 'openraadsinformatie';\nconst checkpointId = '00000000-0000-5000-8000-000000000001';\nreturn [{ json: { runId: `openraadsinformatie-page-${Date.now()}`, sourceKey, collection, checkpointId, qdrantBase: 'http://qdrant:6333', vectorSize: 3072, snapshotLimit: 20 } }];"
+        "jsCode": "// Set these values before activating this workflow.\nconst sourceKey = 'your_organisation';\nconst collection = 'openbesluitvorming';\nconst checkpointId = '00000000-0000-5000-8000-000000000001';\nreturn [{ json: { runId: `openbesluitvorming-page-${Date.now()}`, sourceKey, collection, checkpointId, qdrantBase: 'http://qdrant:6333', vectorSize: 3072, snapshotLimit: 20 } }];"
       },
       "id": "66f5ea17-e431-4d27-a9ad-6f974e000003",
       "name": "2. Configure Ingest",
@@ -304,9 +304,9 @@
         "source": "database",
         "workflowId": {
           "__rl": true,
-          "value": "govchat-openraadsinformatie-document-worker",
+          "value": "govchat-openbesluitvorming-document-worker",
           "mode": "list",
-          "cachedResultName": "OpenRaadsinformatie - Document Worker"
+          "cachedResultName": "OpenBesluitvorming - Document Worker"
         },
         "mode": "once",
         "options": {
