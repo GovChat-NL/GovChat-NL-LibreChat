@@ -48,6 +48,7 @@ De huidige workflowassets staan in deze repository, zodat ze als standaard GovCh
 - [`openbesluitvorming-document-worker.json`](n8n/workflows/openbesluitvorming/openbesluitvorming-document-worker.json): haalt volledige documentinhoud op, verwerkt deze in begrensde embedding-batches en maakt per document een vector met gewogen mean pooling.
 - [`openbesluitvorming-ingest.json`](n8n/workflows/openbesluitvorming/openbesluitvorming-ingest.json): verwerkt één cursorpagina per uitvoering, bewaart een duurzaam checkpoint in Qdrant en registreert individuele dead letters zonder de rest van de ingest te stoppen.
 - [`openbesluitvorming-search.json`](n8n/workflows/openbesluitvorming/openbesluitvorming-search.json): zoekt met hoge recall via zichtbare n8n-stappen voor query-varianten, brede Qdrant-kandidaten, document-level reciprocal-rank fusion, optionele LiteLLM-reranking en een dynamische output met bronverwijzingen.
+- [`openbesluitvorming-sync.json`](n8n/workflows/openbesluitvorming/openbesluitvorming-sync.json): verwerkt incrementele OpenBesluitvorming-wijzigingen via de gedocumenteerde `/api/export/changes` feed, inclusief upserts en verwijderingen.
 - [`orchestrator-openbesluitvorming.json`](n8n/workflows/openbesluitvorming/orchestrator-openbesluitvorming.json): bouwt voort op de bestaande GovChat-orchestrator en voegt de zoektool toe voor vragen over openbare besluitvorming.
 
 De ingest- en zoekworkflow zijn bewust **inactief** en bevatten geen organisatie- of collectie-specifieke standaardwaarde. Stel vóór activering in de zichtbare configuratienode minimaal `sourceKey` en `collection` in. Raadpleeg daarbij de [OpenBesluitvorming API-documentatie](https://openbesluitvorming.nl/docs/api) voor de beschikbare bronnen, snapshot-cursors en entiteitseigenschappen.
@@ -65,6 +66,12 @@ De zoekworkflow is gebaseerd op de bestaande kandidaat- en rerankopzet, maar is 
 Dit is nadrukkelijk **geen volledigheidsgarantie**. Vectorzoekresultaten bewijzen niet dat alle relevante publieke stukken zijn gevonden. Bij politiek gevoelige vragen moet de orchestrator daarom de zoektool gebruiken, bronlinks in het antwoord tonen, geen niet-gevonden informatie invullen en de dekkingbeperking communiceren. Herhaal zo nodig de zoekopdracht met andere bewoordingen, verhoog `candidate_limit`/`result_limit`, verwijder of verbreed filters en controleer de primaire documenten.
 
 Belangrijkste toolparameters: `query`, optioneel `source_key`, `collection`, `candidate_limit` (50–500, standaard 500), `rerank_limit` (50–500, standaard 500), `result_limit` (10–100) en `include_content`. De standaardcollectie heet `openbesluitvorming`; kies in een concrete installatie de collectie die bij die ingest hoort.
+
+### Incrementele synchronisatie na de initiële snapshot
+
+De aanbevolen frequentie voor [`openbesluitvorming-sync.json`](n8n/workflows/openbesluitvorming/openbesluitvorming-sync.json) is **eens per zes uur**. Dit is ruim onder de API-limiet en beperkt tegelijkertijd de belasting van embeddings en Qdrant. Per uitvoering haalt de workflow maximaal één wijzigingenpagina van 500 records op; er is bewust geen paginglus. Als de wijzigingsfeed achterloopt, pakt de volgende zes-uurlijkse uitvoering veilig verder op vanaf de duurzaam opgeslagen cursor.
+
+De syncworkflow is standaard **inactief** en mag pas worden geactiveerd nadat de initiële snapshot voltooid is. Hij leest hetzelfde Qdrant-checkpoint als de snapshotworkflow en stopt zonder API-call wanneer `completed` niet waar is. Daarna gebruikt hij `X-Changes-Cursor` uit de eerste snapshotpagina voor [`/api/export/changes`](https://openbesluitvorming.nl/docs/api). Upserts gaan via dezelfde documentworker; tombstones verwijderen de deterministische Qdrant-punten. De delta-cursor wordt uitsluitend gecommit nadat beide stappen succesvol zijn verwerkt. Daarmee kan de synchronisatie de initiële ingest niet inhalen, overschrijven of verstoren.
 
 De geplande vervolgstappen op deze branch zijn:
 
