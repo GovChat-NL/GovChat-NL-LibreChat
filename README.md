@@ -1,11 +1,35 @@
 # GovChat-NL-LibreChat
 
-Deze variant houdt het bewust simpel:
+> [!WARNING]
+> **Status: niet productierijp / niet gegarandeerd werkend.**
+> Deze repository wordt gedeeld als **inspiratie en referentie-implementatie** voor leveranciers en mede-overheden.
+> Gebruik dit niet als kant-en-klare productieoplossing zonder eigen validatie, hardening, security review en acceptatietesten.
 
-- OpenWebUI is vervangen door LibreChat
-- GovChat overlay blijft actief (help + app launcher)
-- n8n is inbegrepen voor een Orchestrator-agent + Versimpelaar B1 sub-agent (via LiteLLM)
-- RAG/pgvector/pgadmin zijn optioneel via compose-profielen
+## Belangrijke publicatienotitie
+
+- Doel van deze codebase: architectuurideeën, proof-of-concept flows en samenwerkingsbasis.
+- Bekende beperkingen: onderdelen kunnen incompleet, experimenteel of omgeving-afhankelijk zijn.
+- Verwachte inzet: inspiratie voor aanbesteding, leveranciersdialoog en doorontwikkeling binnen overheidscontext.
+
+## Huidige scope van deze repository
+
+Deze stack is in de praktijk breder dan alleen “orchestrator + versimpelaar”. De huidige repository bevat:
+
+- **LibreChat + GovChat overlay** (help + app launcher) via [`overlay/defaults/loader.js`](overlay/defaults/loader.js) en [`overlay/defaults/apps.json`](overlay/defaults/apps.json).
+- **n8n-gedreven agentarchitectuur** met orchestrator en specialist-workflows, geïmporteerd via [`n8n-bootstrap`](docker-compose.yml:533) en workflowbestanden uit [`GovChat-NL-Agents`](../GovChat-NL-Agents/README.md).
+- **LibreChat ↔ n8n OpenAI bridge** via [`n8n-openai-bridge`](docker-compose.yml:893).
+- **Werkende test-apps in de overlay**:
+  - Versimpelaar
+  - Live transcriptie
+  - Afbeelding-generator (async image jobs)
+  - Beleidskompas (conceptueel / in ontwikkeling)
+  - Crawler-koppeling (conceptueel / in ontwikkeling)
+- **RAG-gerelateerde componenten optioneel** via profielen in [`docker-compose.yml`](docker-compose.yml):
+  - `pgvector`
+  - `rag-api`
+  - `pgadmin`
+
+> Let op: in deze specifieke stack staan `pgvector` + `rag-api` centraal voor optionele RAG-profielen. Qdrant wordt elders in GovChat-context genoemd, maar is geen standaardservice in deze compose.
 
 ## Services in de standaard (simpele) start
 
@@ -38,6 +62,27 @@ Niet standaard actief:
 - [`pgadmin`](docker-compose.yml:332): beheertool voor pgvector DB.
 
 Als je nu **geen RAG** nodig hebt, hoef je deze services niet te starten.
+
+## Voor GitHub-publicatie (transparant over status)
+
+Gebruik bij publicatie expliciet deze positionering:
+
+- niet productierijp
+- inspiratie voor leveranciers en mede-overheden
+- aanvullende validatie en hardening vereist
+
+Aanbevolen commit message:
+
+```text
+docs: expliciete publicatiewaarschuwing toegevoegd (niet productierijp, inspiratie voor leveranciers en mede-overheden)
+```
+
+Aanbevolen push-checklist:
+
+1. Controleer dat geen secrets in `.env` of logs staan.
+2. Controleer of alle status-waarschuwingen in README zichtbaar zijn.
+3. Noteer bekende beperkingen en openstaande risico's.
+4. Push pas na interne akkoordronde op deze positionering.
 
 ## Lokaal draaien (simpel)
 
@@ -298,7 +343,7 @@ Daarnaast zie je nu:
 
 Bootstrap importeert/publisht nu ook:
 
-- [`n8n/bootstrap/workflows/govcrawler-run.json`](n8n/bootstrap/workflows/govcrawler-run.json)
+- [`../GovChat-NL-Agents/n8n/workflows/govcrawler-run.json`](../GovChat-NL-Agents/n8n/workflows/govcrawler-run.json)
 
 Deze workflow heeft:
 
@@ -344,7 +389,7 @@ Aanbeveling:
 
 `n8n-bootstrap` gebruikt marker `.govchat-seeded-v5` en importeert de crawler-workflow mee.
 
-Als `AGENTS_WORKFLOW_SOURCE=github` staat en `govcrawler-run.json` nog niet in de remote repo staat, valt bootstrap automatisch terug op de lokale file uit [`n8n/bootstrap/workflows`](n8n/bootstrap/workflows).
+Als `AGENTS_WORKFLOW_SOURCE=github` staat en een workflow nog niet in de remote repo staat, valt bootstrap automatisch terug op de lokale Agents-map [`../GovChat-NL-Agents/n8n/workflows`](../GovChat-NL-Agents/n8n/workflows).
 
 ## n8n beveiliging (from-scratch baseline)
 
@@ -367,7 +412,7 @@ Configuratie in [`.env.example`](.env.example):
 
 - `AGENTS_WORKFLOW_SOURCE` (`github` of `local`)
 - `AGENTS_RAW_BASE_URL` (default: `https://raw.githubusercontent.com/GovChat-NL/GovChat-NL-Agents/main/n8n/workflows`)
-- `AGENTS_WORKFLOW_FILES` (default: `versimpelaar-litellm.json,orchestrator-litellm.json,image-generator-litellm.json,govcrawler-run.json`)
+- `AGENTS_WORKFLOW_FILES` (default: `versimpelaar-litellm.json,orchestrator-litellm.json,image-generator-litellm.json,transcriptie-litellm.json,transcriptie-title-litellm.json,govcrawler-run.json`)
 - `AGENTS_LOCAL_WORKFLOWS_DIR` (default: `/workspace/GovChat-NL-Agents/n8n/workflows`)
 - `AGENTS_BOOTSTRAP_FORCE` (`false` standaard; zet op `true` om import/publish geforceerd opnieuw uit te voeren)
 - `N8N_OWNER_EMAIL` (optioneel; als gezet wordt owner automatisch geprovisioned)

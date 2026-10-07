@@ -66,7 +66,7 @@ const workflow = [
               {
                 parameterType: 'formData',
                 name: 'model',
-                value: '={{ (($json.body && $json.body.model) || "whisper") }}'
+                value: '={{ (($json.body && $json.body.model) || "gpt-4o-transcribe") }}'
               },
               {
                 parameterType: 'formData',

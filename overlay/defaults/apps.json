@@ -30,6 +30,24 @@
       }
     },
     {
+      "id": "beleidskompas",
+      "name": "Beleidskompas",
+      "icon": "🧭",
+      "description": "Ondersteuning bij beleidsafwegingen in vier stappen (SiS 4.0)",
+      "url": "/c/new",
+      "target": "beleidskompas",
+      "config": {
+        "specialist_team": "Bij hoge juridische/financiële impact: betrek concernjurist, financieel adviseur en programmaregisseur.",
+        "sources": [
+          "SiS 4.0 Strategisch kader",
+          "SiS 4.0 Uitvoeringskader",
+          "Provinciale Instrumentenkoffer",
+          "Coalitieakkoord en beleidskaders",
+          "Overzicht wettelijke taken Provincie"
+        ]
+      }
+    },
+    {
       "id": "afbeelding-generator",
       "name": "Afbeelding generator",
       "icon": "🖼️",
@@ -49,7 +67,6 @@
       "url": "/n8n/webhook/transcriptie-litellm",
       "target": "transcriptie",
       "config": {
-        "webhook_token": "local_n8n_webhook_token_change_me",
         "chunk_ms": 5000,
         "chunk_min_ms": 2200,
         "chunk_max_ms": 20000,
@@ -59,7 +76,7 @@
         "overlap_ms": 650,
         "context_prompt": "Nederlands gesprek, maak een complete en nette transcriptie.",
         "max_duration_minutes": 120,
-        "litellm_model": "whisper",
+        "litellm_model": "gpt-4o-transcribe",
         "realtime_enabled": false,
         "realtime_url": "/govchat-api/realtime-stt",
         "realtime_provider": "litellm",
@@ -67,7 +84,6 @@
         "realtime_commit_ms": 1200,
         "language": "nl",
         "title_webhook": "/n8n/webhook/transcriptie-title-litellm",
-        "title_webhook_token": "local_n8n_webhook_token_change_me",
         "title_model": "govchat-default",
         "title_max_chars": 72,
         "title_timeout_ms": 6000,

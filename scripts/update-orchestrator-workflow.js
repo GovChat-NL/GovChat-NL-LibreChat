@@ -1,6 +1,6 @@
 const fs = require('fs');
 
-const workflowPath = 'GovChat-NL-LibreChat/n8n/bootstrap/workflows/orchestrator-litellm.json';
+const workflowPath = 'GovChat-NL-Agents/n8n/workflows/orchestrator-litellm.json';
 const data = JSON.parse(fs.readFileSync(workflowPath, 'utf8'));
 const wf = Array.isArray(data) ? data[0] : data;
 
