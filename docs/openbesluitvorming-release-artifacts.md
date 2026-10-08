@@ -80,3 +80,20 @@ Restoring a starter snapshot does **not** activate ingest or incremental synchro
 Native Qdrant snapshots are implementation/version-sensitive. The manifest records the minimum supported Qdrant version and collection vector schema. Restore only into an empty compatible collection and verify the checksum first.
 
 The snapshot payload includes source metadata and content previews. Public availability of source documents does not by itself settle redistribution, privacy, or retention questions. The publication review remains mandatory.
+
+## Weekly automated publication
+
+The weekly publisher is [`scripts/openbesluitvorming-weekly-release.sh`](../scripts/openbesluitvorming-weekly-release.sh). The supplied cron template [`cron/openbesluitvorming-weekly-release.cron`](../cron/openbesluitvorming-weekly-release.cron) runs at **Sunday 20:00 UTC**, two hours after the Sunday 18:00 UTC delta-sync window.
+
+Before any snapshot or release is created, the publisher requires both explicit governance acknowledgements and verifies all of the following from the private local Qdrant checkpoint:
+
+- the initial snapshot is complete;
+- the source key and initial changes cursor exist;
+- a delta-sync cursor has been committed;
+- the last delta page is caught up (`sync_has_more: false`);
+- no immutable release already exists for the ISO week;
+- no other weekly publisher holds the local lock.
+
+If any check fails, it exits without creating a snapshot or GitHub Release. A failed weekly publication is therefore retried on the following week only after the underlying sync or governance issue has been resolved. Existing releases are never overwritten. Keep previous release assets available until any refresh, withdrawal, or takedown decision has been reviewed and documented.
+
+The cron environment file is deliberately outside Git at `/etc/govchat/openbesluitvorming-release.env`. It contains only local operator acknowledgements and optional artifact-directory settings; it must not contain a public Qdrant URL or Qdrant credentials. Qdrant remains Docker-internal/localhost-only throughout snapshot creation and publication.
