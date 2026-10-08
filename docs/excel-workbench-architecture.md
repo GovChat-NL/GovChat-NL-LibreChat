@@ -80,7 +80,7 @@ Validate at least:
 
 The existing image route remains unchanged in this branch. Its browser-level Referer/cookie-presence checks should be upgraded later to the same independent authenticated-authorization model.
 
-## Phase 2A: copy-on-write workbook transforms (in progress)
+## Phase 2A: copy-on-write workbook transforms (geïmplementeerd en gevalideerd)
 
 `transform_excel` creates a new workbook from an uploaded `.xlsx`; it never overwrites the source. The worker currently accepts only these validated operations:
 
