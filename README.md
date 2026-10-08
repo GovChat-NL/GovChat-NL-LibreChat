@@ -79,6 +79,14 @@ De geplande vervolgstappen op deze branch zijn:
 2. gebruikers- en beheerdocumentatie uitbreiden met configuratie, filtering, bronverwijzing, beheer van dead letters en operationele controles;
 3. retrieval-evaluaties toevoegen met representatieve politieke vragen, alternatieve formuleringen en gecontroleerde bronverwijzingen.
 
+## Distributie van een vooraf gevulde starterdataset
+
+Een vooraf gevulde Provincie Limburg-vectorcollectie wordt niet als binary in Git opgeslagen. De ondersteunde distributievorm is een versiegebonden, native Qdrant-snapshot als immutable GitHub Release asset, met een SHA-256-gecontroleerd manifest. Dit voorkomt grote Git-geschiedenissen en maakt intrekking of vervanging van data mogelijk zonder broncodegeschiedenis te herschrijven.
+
+Zie [`docs/openbesluitvorming-release-artifacts.md`](docs/openbesluitvorming-release-artifacts.md) voor de expliciete publicatie- en herstelprocedure, governancevoorwaarden, provenance, refresh- en withdrawalbeleid. De scripts [`openbesluitvorming-release-snapshot.sh`](scripts/openbesluitvorming-release-snapshot.sh) en [`openbesluitvorming-restore-release-snapshot.sh`](scripts/openbesluitvorming-restore-release-snapshot.sh) maken of herstellen alleen na een expliciete operator-acknowledgement; zij uploaden niet automatisch en starten geen ingestworkflow.
+
+De release-artifact route wordt pas gebruikt nadat de initiële snapshot is afgerond en een review heeft bevestigd dat verspreiding via GitHub passend is voor de bronmetadata en content previews. Latere wijzigingen lopen via de incrementele sync, niet via een gewijzigde bestaande release.
+
 ## Services in de standaard (simpele) start
 
 Standaard actief met `docker compose up -d`:
