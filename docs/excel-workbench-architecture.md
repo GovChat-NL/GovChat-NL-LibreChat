@@ -96,3 +96,24 @@ Every operation validates worksheet names, A1 cell/range syntax, row/column limi
 
 > [!IMPORTANT]
 > End-to-end uploaded-workbook transformation requires the separate bridge dependency in [`docs/bridge-xlsx-upload-dependency.md`](bridge-xlsx-upload-dependency.md). The dependency is not deployed by the default stock bridge image. Do not set `N8N_OPENAI_BRIDGE_FILE_UPLOAD_MODE=extract-xlsx-json` until the reviewed bridge fork commit/image is available.
+
+## Phase 2B: gepland — geavanceerde analyse en presentatie
+
+Phase 2B wordt pas gestart na een afzonderlijke ontwerp- en akkoordronde. De beoogde functies zijn:
+
+- formules maken of wijzigen vanuit een expliciete allowlist;
+- getal-, datum-, percentage- en valutaopmaak;
+- voorwaardelijke opmaak voor KPI's en signaleringen;
+- gevalideerde Excel-tabellen, named ranges en datavalidatie-dropdowns;
+- grafieken vanuit een beperkt grafiekspecificatiecontract;
+- samenvattings- en dashboardsheets;
+- wijzigingslogboek in een apart werkblad.
+
+Beveiligingsvoorwaarden voor Phase 2B:
+
+1. Geen arbitraire formuletekst zonder functiebeleid.
+2. Geen externe workbookreferenties, DDE-constructies of externe hyperlinks.
+3. Geen macro's of `.xlsm`-bestanden zonder afzonderlijk macrobeleid.
+4. Grafieken mogen alleen verwijzen naar bestaande, gevalideerde sheetbereiken.
+5. Iedere transformatie blijft copy-on-write en retourneert een nieuw bestand.
+6. Bestaande styling, formules en workbookstructuur worden behouden tenzij de gevraagde bewerking ze expliciet wijzigt.
