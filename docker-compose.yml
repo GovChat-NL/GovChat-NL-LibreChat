@@ -57,6 +57,7 @@ services:
       # --- JWT tokens ---
       JWT_SECRET: ${JWT_SECRET}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      REFRESH_TOKEN_EXPIRY: ${JWT_REFRESH_TOKEN_EXPIRY}
 
       # --- Credential encryptie ---
       CREDS_KEY: ${CREDS_KEY}
@@ -79,7 +80,7 @@ services:
       OPENID_CALLBACK_URL: /oauth/openid/callback
       OPENID_BUTTON_LABEL: Inloggen met Microsoft
       OPENID_USE_END_SESSION_ENDPOINT: "true"
-      DEBUG_OPENID_REQUESTS: "true"
+      DEBUG_OPENID_REQUESTS: "false"
       OPENID_GENERATE_NONCE: "true"
 
 
@@ -89,12 +90,17 @@ services:
       # --- Toegangsbeperking via Entra ID app-rol ---
       OPENID_REQUIRED_ROLE_TOKEN_KIND: id
       OPENID_REQUIRED_ROLE_PARAMETER_PATH: roles
-      OPENID_REQUIRED_ROLE: ${OPENID_REQUIRED_ROLE}
+      OPENID_REQUIRED_ROLE: "LibreChat.Access,LibreChat.Admin" # Iedereen met Access OF Admin mag inloggen
+
+      # --- Automatische Admin Elevatie voor het Admin Panel ---
+      OPENID_ADMIN_ROLE_TOKEN_KIND: id
+      OPENID_ADMIN_ROLE_PARAMETER_PATH: roles
+      OPENID_ADMIN_ROLE: "LibreChat.Admin"
 
       # Caching Configuration
       OPENID_JWKS_URL_CACHE_ENABLED: "true"
       OPENID_JWKS_URL_CACHE_TIME: "600000"  # 10 minutes in milliseconds
- 
+
       # Azure-specific Configuration
       OPENID_ON_BEHALF_FLOW_FOR_USERINFO_REQUIRED: "true"
       OPENID_ON_BEHALF_FLOW_USERINFO_SCOPE: "user.read"
@@ -123,8 +129,8 @@ services:
       ADMIN_PANEL_URL: ${ADMIN_PANEL_PUBLIC_URL}
 
       # --- Logging ---
-      DEBUG_LOGGING: "true"
-      DEBUG_CONSOLE: "true"
+      DEBUG_LOGGING: "false"
+      DEBUG_CONSOLE: "false"
 
       # --- Email (uitgeschakeld) ---
       EMAIL_SERVICE: ""
@@ -228,6 +234,24 @@ services:
       - librechat-net
 
   # ---------------------------------------------------------------------------
+  #  UI Init - Genereert ui-overrides.css op basis van .env instellingen
+  # ---------------------------------------------------------------------------
+  librechat-ui-init:
+    image: alpine:3.20
+    container_name: librechat-ui-init
+    restart: "no"
+    volumes:
+      - ./scripts/generate-ui-css.sh:/entrypoint.sh:ro
+      - /opt/librechat/overlay/publish:/publish
+    environment:
+      UI_HIDE_PARAMETERS: ${UI_HIDE_PARAMETERS:-true}
+      UI_HIDE_UPLOAD_TO_PROVIDER: ${UI_HIDE_UPLOAD_TO_PROVIDER:-true}
+      UI_HIDE_TOOLS_DROPDOWN: ${UI_HIDE_TOOLS_DROPDOWN:-true}
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+    networks:
+      - librechat-net
+
+  # ---------------------------------------------------------------------------
   #  LibreChat reverse proxy
   #  - Serveert de app publiek op :3080
   #  - Injecteert GovChat overlay assets (help + app launcher) in HTML
@@ -239,6 +263,8 @@ services:
     depends_on:
       librechat:
         condition: service_started
+      librechat-ui-init:
+        condition: service_completed_successfully
     ports:
       - "${LC_PORT:-3080}:3080"
     volumes:
@@ -257,7 +283,7 @@ services:
     container_name: librechat-mongodb
     restart: unless-stopped
     ports:
-      - "${MONGO_PORT:-27017}:27017"
+      - "${INTERNAL_BIND_IP:-127.0.0.1}:${MONGO_PORT:-27017}:27017"
     volumes:
       - /opt/librechat/data/mongodb:/data/db
     environment:
@@ -343,7 +369,7 @@ services:
       litellm-postgres:
         condition: service_healthy
     ports:
-      - "${LITELLM_PORT:-4000}:4000"
+      - "${INTERNAL_BIND_IP:-127.0.0.1}:${LITELLM_PORT:-4000}:4000"
     environment:
       DATABASE_URL: postgresql://litellm:${LITELLM_POSTGRES_PASSWORD}@litellm-postgres:5432/litellm
       DATABASE_CONNECTION_POOL_LIMIT: ${LITELLM_DB_POOL_LIMIT:-10}
@@ -358,6 +384,10 @@ services:
       AZURE_OPENAI_REALTIME_API_BASE: ${AZURE_OPENAI_REALTIME_API_BASE}
       AZURE_OPENAI_REALTIME_API_VERSION: ${AZURE_OPENAI_REALTIME_API_VERSION}
       AZURE_OPENAI_REALTIME_API_KEY: ${AZURE_OPENAI_REALTIME_API_KEY}
+      AZURE_AI_API_BASE: ${AZURE_AI_API_BASE}
+      AZURE_AI_API_KEY: ${AZURE_AI_API_KEY}
+      COHERE_API_BASE: ${COHERE_API_BASE}
+      COHERE_API_KEY: ${COHERE_API_KEY}
       LITELLM_STT_NEXT_MODEL: ${LITELLM_STT_NEXT_MODEL}
       LITELLM_STT_NEXT_API_BASE: ${LITELLM_STT_NEXT_API_BASE}
       LITELLM_STT_NEXT_API_VERSION: ${LITELLM_STT_NEXT_API_VERSION}
@@ -385,6 +415,7 @@ services:
       start_period: 180s
     networks:
       - librechat-net
+      - workflow-internal
 
   # ---------------------------------------------------------------------------
   #  n8n PostgreSQL - workflow metadata + execution storage
@@ -406,6 +437,112 @@ services:
       retries: 5
     networks:
       - librechat-net
+      - workflow-internal
+
+  # ---------------------------------------------------------------------------
+  #  Excel storage permissions - named volumes are mounted root-owned initially.
+  # ---------------------------------------------------------------------------
+  excel-storage-permissions:
+    image: alpine:3.20
+    container_name: govchat-excel-storage-permissions
+    restart: "no"
+    command: >
+      sh -lc "
+        mkdir -p /storage/files /storage/metadata &&
+        chown -R 10001:10001 /storage &&
+        chmod 0750 /storage /storage/files /storage/metadata
+      "
+    volumes:
+      - storage_files:/storage
+    # This one-shot initializer must retain ownership-changing capability for
+    # the newly created named volume; the application containers stay dropped.
+    networks:
+      - workflow-internal
+
+  # ---------------------------------------------------------------------------
+  #  Excel worker - private, bounded XLSX inspection and generation service
+  # ---------------------------------------------------------------------------
+  excel-worker:
+    build:
+      context: ./excel-worker
+      dockerfile: Dockerfile
+    image: govchat-excel-worker:local
+    container_name: govchat-excel-worker
+    restart: unless-stopped
+    depends_on:
+      excel-storage-permissions:
+        condition: service_completed_successfully
+    expose:
+      - "8080"
+    environment:
+      EXCEL_INTERNAL_API_TOKEN: ${EXCEL_INTERNAL_API_TOKEN}
+      EXCEL_STORAGE_ROOT: /storage
+      EXCEL_MAX_UPLOAD_BYTES: ${EXCEL_MAX_UPLOAD_BYTES:-10485760}
+      EXCEL_MAX_SHEETS: ${EXCEL_MAX_SHEETS:-25}
+      EXCEL_MAX_ROWS: ${EXCEL_MAX_ROWS:-10000}
+      EXCEL_MAX_COLUMNS: ${EXCEL_MAX_COLUMNS:-100}
+      EXCEL_ARTIFACT_TTL_HOURS: ${EXCEL_ARTIFACT_TTL_HOURS:-24}
+    volumes:
+      - storage_files:/storage
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    pids_limit: 128
+    mem_limit: 1024m
+    cpus: "0.75"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      - workflow-internal
+
+  # ---------------------------------------------------------------------------
+  #  Excel artifacts - validates LibreChat refresh JWT before download streaming
+  # ---------------------------------------------------------------------------
+  excel-artifacts:
+    build:
+      context: ./excel-artifacts
+      dockerfile: Dockerfile
+    image: govchat-excel-artifacts:local
+    container_name: govchat-excel-artifacts
+    restart: unless-stopped
+    depends_on:
+      excel-storage-permissions:
+        condition: service_completed_successfully
+    expose:
+      - "8081"
+    environment:
+      PORT: "8081"
+      EXCEL_STORAGE_ROOT: /storage
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+    volumes:
+      - storage_files:/storage:ro
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    pids_limit: 64
+    mem_limit: 256m
+    cpus: "0.25"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8081/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - librechat-net
+      - workflow-internal
 
   # ---------------------------------------------------------------------------
   #  n8n - workflow engine (niet publiek geëxposed)
@@ -422,7 +559,7 @@ services:
       litellm:
         condition: service_healthy
     ports:
-      - "5678:5678"
+      - "${INTERNAL_BIND_IP:-127.0.0.1}:5678:5678"
     expose:
       - "5678"
       - "5679"
@@ -445,6 +582,16 @@ services:
       N8N_BASIC_AUTH_USER: ${N8N_BASIC_AUTH_USER}
       N8N_BASIC_AUTH_PASSWORD: ${N8N_BASIC_AUTH_PASSWORD}
 
+      # --- Data Privacy & Execution Logging ---
+      EXECUTIONS_DATA_SAVE_ON_SUCCESS: "none"   # Slaat GEEN enkele geslaagde chat/workflow op
+      EXECUTIONS_DATA_SAVE_ON_ERROR: "all"     # Slaat ALLEEN op als er een error/fout optreedt (voor debugging)
+      EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS: "false" # Bewaart ook geen handmatige test-runs via de editor
+
+      # --- Automatisch opschonen van eventuele error-logs na 30 dagen ---
+      EXECUTIONS_DATA_PRUNE: "true"
+      EXECUTIONS_DATA_MAX_AGE: "${DATA_RETENTION_HOURS:-720}"         # Foutlogs na 30 dagen alsnog wissen
+      EXECUTIONS_DATA_PRUNE_MAX_COUNT: "10000"
+
       # Runtime
       N8N_PORT: "5678"
       N8N_PROTOCOL: http
@@ -465,6 +612,10 @@ services:
       N8N_RUNNERS_GRANT_TOKEN_TTL: ${N8N_RUNNERS_GRANT_TOKEN_TTL:-120}
       N8N_RUNNERS_BROKER_LISTEN_ADDRESS: 0.0.0.0
       N8N_RUNNERS_AUTH_TOKEN: ${N8N_RUNNERS_AUTH_TOKEN}
+      CRAWLER_EGRESS_URL: ${CRAWLER_EGRESS_URL:-http://crawler-egress:8080}
+      CRAWLER_EGRESS_TOKEN: ${CRAWLER_EGRESS_TOKEN}
+      # Dedicated credential for the orchestrator -> GovChat image-normalisation call.
+      ORCHESTRATOR_INTERNAL_TOKEN: ${ORCHESTRATOR_INTERNAL_TOKEN}
 
       # LLM target + webhook shared secret
       LITELLM_URL: ${LITELLM_URL}
@@ -480,6 +631,14 @@ services:
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
       CRAWLER_ADMIN_BASE_URL: ${CRAWLER_ADMIN_BASE_URL:-http://govchat-overlay-admin:3002}
       CRAWLER_INTERNAL_TOKEN: ${CRAWLER_INTERNAL_TOKEN:-${N8N_WEBHOOK_TOKEN}}
+      EXCEL_INTERNAL_API_TOKEN: ${EXCEL_INTERNAL_API_TOKEN}
+      EXCEL_WORKER_URL: http://excel-worker:8080
+
+      # Librechat-specific n8n settings
+      LIBRECHAT_JWT_SECRET: ${JWT_SECRET}
+
+      # --- Resource limits ---
+      NODE_OPTIONS: "--max-old-space-size=3072"
     volumes:
       - n8n-data:/home/node/.n8n
       - ./n8n/bootstrap:/bootstrap:ro
@@ -491,6 +650,9 @@ services:
       retries: 5
       start_period: 30s
     networks:
+      # n8n itself has no public/default Docker network. Workflow HTTP nodes can
+      # reach only services explicitly attached to this internal network.
+      - workflow-internal
       - librechat-net
 
   # ---------------------------------------------------------------------------
@@ -506,27 +668,81 @@ services:
     environment:
       N8N_RUNNERS_TASK_BROKER_URI: http://n8n:5679
       N8N_RUNNERS_AUTH_TOKEN: ${N8N_RUNNERS_AUTH_TOKEN}
-      # Nodig voor Code node gebruik van $env.* in runner context
+      # Code nodes need only the explicit task-runners.json allowlist below.
       N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
       NODE_FUNCTION_ALLOW_BUILTIN: fs,path,crypto,http,https,url
+      N8N_WEBHOOK_TOKEN: ${N8N_WEBHOOK_TOKEN}
+      BELEIDSKOMPAS_N8N_BASE_URL: ${BELEIDSKOMPAS_N8N_BASE_URL:-http://n8n:5678}
+      BELEIDSKOMPAS_N8N_WEBHOOK_TOKEN: ${BELEIDSKOMPAS_N8N_WEBHOOK_TOKEN:-${N8N_WEBHOOK_TOKEN}}
+      CRAWLER_ADMIN_BASE_URL: ${CRAWLER_ADMIN_BASE_URL:-http://govchat-overlay-admin:3002}
+      CRAWLER_INTERNAL_TOKEN: ${CRAWLER_INTERNAL_TOKEN:-${N8N_WEBHOOK_TOKEN}}
+      CRAWLER_EGRESS_TOKEN: ${CRAWLER_EGRESS_TOKEN}
+      ORCHESTRATOR_INTERNAL_TOKEN: ${ORCHESTRATOR_INTERNAL_TOKEN}
       LITELLM_URL: ${LITELLM_URL}
       LITELLM_API_KEY: ${LITELLM_API_KEY}
-      AZURE_OPENAI_STT_API_BASE: ${AZURE_OPENAI_STT_API_BASE}
-      AZURE_OPENAI_STT_API_VERSION: ${AZURE_OPENAI_STT_API_VERSION}
-      AZURE_OPENAI_STT_API_KEY: ${AZURE_OPENAI_STT_API_KEY}
+      LITELLM_TITLE_MODEL: ${LITELLM_TITLE_MODEL:-govchat-default}
       N8N_ENABLE_IMAGE_TOOL: ${N8N_ENABLE_IMAGE_TOOL:-false}
       N8N_LITELLM_IMAGE_BASE_URL: ${N8N_LITELLM_IMAGE_BASE_URL:-${LITELLM_URL}}
       N8N_LITELLM_IMAGE_API_KEY: ${N8N_LITELLM_IMAGE_API_KEY:-${LITELLM_API_KEY}}
+      N8N_LITELLM_IMAGE_API_VERSION: ${N8N_LITELLM_IMAGE_API_VERSION:-}
       N8N_LITELLM_IMAGE_MODEL: ${N8N_LITELLM_IMAGE_MODEL:-gpt-image-1}
+      N8N_ORCHESTRATOR_IMAGE_DATA_URL_MAX_CHARS: ${N8N_ORCHESTRATOR_IMAGE_DATA_URL_MAX_CHARS:-450000}
+      N8N_ORCHESTRATOR_IMAGE_MAX_RESOLUTION_PX: ${N8N_ORCHESTRATOR_IMAGE_MAX_RESOLUTION_PX:-1568}
+      N8N_ORCHESTRATOR_VISION_MODEL: ${N8N_ORCHESTRATOR_VISION_MODEL:-gpt-5.4}
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
+      EXCEL_INTERNAL_API_TOKEN: ${EXCEL_INTERNAL_API_TOKEN}
+      EXCEL_WORKER_URL: http://excel-worker:8080
       N8N_RUNNERS_AUTO_SHUTDOWN_TIMEOUT: "30"
       N8N_RUNNERS_TASK_TIMEOUT: "180"
       N8N_RUNNERS_LAUNCHER_LOG_LEVEL: warn
+
+      # --- Resource limits ---
+      NODE_OPTIONS: "--max-old-space-size=3072"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    mem_limit: 3584m
+    cpus: "1.0"
     volumes:
       - /opt/librechat/images:/shared-images
       - ./n8n/task-runners.json:/etc/n8n-task-runners.json:ro
     networks:
-      - librechat-net
+      - workflow-internal
+
+  # ---------------------------------------------------------------------------
+  #  Isolated crawler runtime
+  #  - Only this service gets public network egress.
+  #  - It validates every public destination and redirect before connecting.
+  # ---------------------------------------------------------------------------
+  crawler-egress:
+    build:
+      context: ./crawler-egress
+      dockerfile: Dockerfile
+    image: govchat-crawler-egress:local
+    container_name: govchat-crawler-egress
+    restart: unless-stopped
+    environment:
+      PORT: "8080"
+      CRAWLER_EGRESS_TOKEN: ${CRAWLER_EGRESS_TOKEN}
+      CRAWLER_EGRESS_MAX_BODY_BYTES: ${CRAWLER_EGRESS_MAX_BODY_BYTES:-2097152}
+      CRAWLER_EGRESS_TIMEOUT_MS: ${CRAWLER_EGRESS_TIMEOUT_MS:-20000}
+      CRAWLER_EGRESS_MAX_REDIRECTS: ${CRAWLER_EGRESS_MAX_REDIRECTS:-5}
+      LITELLM_URL: ${LITELLM_URL}
+      LITELLM_API_KEY: ${LITELLM_API_KEY}
+      CRAWLER_ADMIN_BASE_URL: ${CRAWLER_ADMIN_BASE_URL:-http://govchat-overlay-admin:3002}
+      CRAWLER_INTERNAL_TOKEN: ${CRAWLER_INTERNAL_TOKEN:-${N8N_WEBHOOK_TOKEN}}
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    mem_limit: 512m
+    cpus: "0.75"
+    networks:
+      - workflow-internal
+      - crawler-egress-net
 
   # ---------------------------------------------------------------------------
   #  n8n bootstrap - importeert workflows uit GovChat-NL-Agents (GitHub)
@@ -565,6 +781,8 @@ services:
     volumes:
       - n8n-data:/home/node/.n8n
       - ../GovChat-NL-Agents:/workspace/GovChat-NL-Agents:ro
+      - ./n8n/workflows:/workspace/local-workflows:ro
+      - ./scripts/patch-orchestrator-excel-tool.js:/workspace/patch-orchestrator-excel-tool.js:ro
     entrypoint:
       - /bin/sh
       - -lc
@@ -790,12 +1008,20 @@ services:
         });
         NODE
 
-        MARKER_FILE=/home/node/.n8n/.govchat-seeded-v5
+        # Keep the bounded Excel tool in this deployment repository. It is
+        # imported before the patched central orchestrator references it.
+        cp /workspace/local-workflows/provincie_agent_mvp.json /tmp/agents/workflows/provincie_agent_mvp.json
+        node /workspace/patch-orchestrator-excel-tool.js \
+          /tmp/agents/workflows/orchestrator-litellm.json \
+          /tmp/agents/workflows/orchestrator-litellm.json
+
+        MARKER_FILE=/home/node/.n8n/.govchat-seeded-v6
 
         FORCE="$(printf '%s' "$${AGENTS_BOOTSTRAP_FORCE:-false}" | tr '[:upper:]' '[:lower:]')"
         if [ "$${FORCE}" = "true" ] || [ ! -f "$${MARKER_FILE}" ]; then
           echo "[bootstrap] Import/publish workflows (force=$${FORCE})"
           n8n import:workflow --input=/tmp/agents/workflows/versimpelaar-litellm.json
+          n8n import:workflow --input=/tmp/agents/workflows/provincie_agent_mvp.json
           n8n import:workflow --input=/tmp/agents/workflows/orchestrator-litellm.json
           n8n import:workflow --input=/tmp/agents/workflows/image-generator-litellm.json
           if [ -f /tmp/agents/workflows/transcriptie-litellm.json ]; then
@@ -825,6 +1051,7 @@ services:
 
           # Verifieer dat workflows echt bestaan door export per id.
           n8n export:workflow --id=govchat-versimpelaar-b1-litellm --output=/tmp/verify-versimpelaar.json
+          n8n export:workflow --id=govchat-provincie-excel-mvp --output=/tmp/verify-excel-mvp.json
           n8n export:workflow --id=govchat-orchestrator-litellm --output=/tmp/verify-orchestrator.json
           n8n export:workflow --id=govchat-image-generator-litellm --output=/tmp/verify-image-generator.json
           if [ -f /tmp/agents/workflows/transcriptie-litellm.json ]; then
@@ -853,6 +1080,7 @@ services:
           fi
 
           n8n publish:workflow --id=govchat-versimpelaar-b1-litellm
+          n8n publish:workflow --id=govchat-provincie-excel-mvp
           n8n publish:workflow --id=govchat-orchestrator-litellm
           n8n publish:workflow --id=govchat-image-generator-litellm
           if [ -f /tmp/agents/workflows/transcriptie-litellm.json ]; then
@@ -908,11 +1136,11 @@ services:
       MODELS_CONFIG_FILE: /app/models.json
       LOG_REQUESTS: ${N8N_OPENAI_BRIDGE_LOG_REQUESTS:-false}
       ENABLE_TASK_DETECTION: ${N8N_OPENAI_BRIDGE_ENABLE_TASK_DETECTION:-false}
-      SESSION_ID_HEADERS: ${N8N_OPENAI_BRIDGE_SESSION_ID_HEADERS:-X-Session-Id,X-Chat-Id,X-OpenWebUI-Chat-Id}
-      USER_ID_HEADERS: ${N8N_OPENAI_BRIDGE_USER_ID_HEADERS:-X-User-Id,X-OpenWebUI-User-Id}
-      USER_EMAIL_HEADERS: ${N8N_OPENAI_BRIDGE_USER_EMAIL_HEADERS:-X-User-Email,X-OpenWebUI-User-Email}
-      USER_NAME_HEADERS: ${N8N_OPENAI_BRIDGE_USER_NAME_HEADERS:-X-User-Name,X-OpenWebUI-User-Name}
-      USER_ROLE_HEADERS: ${N8N_OPENAI_BRIDGE_USER_ROLE_HEADERS:-X-User-Role,X-OpenWebUI-User-Role}
+      SESSION_ID_HEADERS: ${N8N_OPENAI_BRIDGE_SESSION_ID_HEADERS:-X-Session-Id,X-Chat-Id}
+      USER_ID_HEADERS: ${N8N_OPENAI_BRIDGE_USER_ID_HEADERS:-X-User-Id}
+      USER_EMAIL_HEADERS: ${N8N_OPENAI_BRIDGE_USER_EMAIL_HEADERS:-X-User-Email}
+      USER_NAME_HEADERS: ${N8N_OPENAI_BRIDGE_USER_NAME_HEADERS:-X-User-Name}
+      USER_ROLE_HEADERS: ${N8N_OPENAI_BRIDGE_USER_ROLE_HEADERS:-X-User-Role}
     volumes:
       - ./n8n-openai-bridge/models.json:/app/models.json:ro
     healthcheck:
@@ -922,7 +1150,9 @@ services:
       retries: 3
       start_period: 15s
     networks:
+      # Bridge is the only controlled link between public LibreChat and isolated n8n.
       - librechat-net
+      - workflow-internal
 
   # ---------------------------------------------------------------------------
   #  pgvector 0.8.0 (pg16) - Vector extensie voor RAG embeddings
@@ -1000,7 +1230,7 @@ services:
     container_name: librechat-admin-panel
     restart: unless-stopped
     ports:
-      - "${ADMIN_PANEL_PORT:-3100}:3000"
+      - "${INTERNAL_BIND_IP:-127.0.0.1}:${ADMIN_PANEL_PORT:-3100}:3000"
     depends_on:
       - librechat
     extra_hosts:
@@ -1027,12 +1257,22 @@ services:
     container_name: govchat-overlay-admin
     restart: unless-stopped
     ports:
-      - "${GOVCHAT_OVERLAY_ADMIN_PORT:-3002}:3002"
+      - "${INTERNAL_BIND_IP:-127.0.0.1}:${GOVCHAT_OVERLAY_ADMIN_PORT:-3002}:3002"
     environment:
       - ADMIN_PASSWORD=${GOVCHAT_ADMIN_PASSWORD}
+      - ADMIN_SESSION_TTL_MINUTES=${ADMIN_SESSION_TTL_MINUTES:-480}
+      - ADMIN_MAX_SESSIONS=${ADMIN_MAX_SESSIONS:-100}
+      - ADMIN_LOGIN_MAX_FAILURES=${ADMIN_LOGIN_MAX_FAILURES:-5}
+      - ADMIN_LOGIN_WINDOW_MINUTES=${ADMIN_LOGIN_WINDOW_MINUTES:-15}
+      - ADMIN_COOKIE_SECURE=${ADMIN_COOKIE_SECURE:-}
+      - PUBLIC_BASE_URL=${PUBLIC_BASE_URL}
       - CORS_ORIGIN=${GOVCHAT_OVERLAY_CORS_ORIGIN}
       - DATA_DIR=/data
       - PUBLISH_DIR=/publish
+      # Server-side only: never expose this value in overlay JSON or browser JavaScript.
+      - N8N_WEBHOOK_TOKEN=${N8N_WEBHOOK_TOKEN}
+      - N8N_INTERNAL_BASE_URL=${N8N_INTERNAL_BASE_URL:-http://n8n:5678}
+      - ORCHESTRATOR_INTERNAL_TOKEN=${ORCHESTRATOR_INTERNAL_TOKEN}
       - BELEIDSKOMPAS_N8N_BASE_URL=${BELEIDSKOMPAS_N8N_BASE_URL:-http://n8n:5678}
       - BELEIDSKOMPAS_N8N_WEBHOOK_TOKEN=${BELEIDSKOMPAS_N8N_WEBHOOK_TOKEN:-${N8N_WEBHOOK_TOKEN}}
       - IMAGE_JOBS_ENABLED=${IMAGE_JOBS_ENABLED:-false}
@@ -1065,6 +1305,7 @@ services:
       - librechat-proxy
     networks:
       - librechat-net
+      - workflow-internal
 
   # ---------------------------------------------------------------------------
   #  PgAdmin - Beheerinterface voor pgvector database
@@ -1075,7 +1316,7 @@ services:
     container_name: librechat-pgadmin
     restart: unless-stopped
     ports:
-      - "${PGADMIN_PORT:-5051}:80"
+      - "${INTERNAL_BIND_IP:-127.0.0.1}:${PGADMIN_PORT:-5051}:80"
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
@@ -1090,11 +1331,124 @@ services:
     networks:
       - librechat-net
 
+  # ---------------------------------------------------------------------------
+  #  LibreChat Mongo retention cleaner
+  #  - Deletes expired user chats and dependent messages/files/shares/usage.
+  #  - Runs once per hour using DATA_RETENTION_HOURS.
+  # ---------------------------------------------------------------------------
+  librechat-mongo-retention-cleaner:
+    image: mongo:8.0.20
+    container_name: librechat-mongo-retention-cleaner
+    restart: unless-stopped
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    environment:
+      MONGO_ROOT_USER: ${MONGO_ROOT_USER}
+      MONGO_ROOT_PASS: ${MONGO_ROOT_PASS}
+      MONGO_RETENTION_HOST: mongodb
+      RETENTION_HOURS: ${DATA_RETENTION_HOURS:-720}
+      RETENTION_DRY_RUN: "false"
+    volumes:
+      - ./scripts/cleanup-librechat-mongo.js:/scripts/cleanup-librechat-mongo.js:ro
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        while true; do
+          echo "[$$(date '+%Y-%m-%d %H:%M:%S')] [Mongo Retention] Running user-content cleanup..."
+          mongosh --quiet \
+            --host "$$MONGO_RETENTION_HOST" \
+            -u "$$MONGO_ROOT_USER" \
+            -p "$$MONGO_ROOT_PASS" \
+            --authenticationDatabase admin \
+            --file /scripts/cleanup-librechat-mongo.js || echo "[Mongo Retention] Cleanup failed"
+          sleep 3600
+        done
+    networks:
+      - librechat-net
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    restart: always
+    ports:
+      - "${INTERNAL_BIND_IP}:6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    environment:
+      QDRANT__SERVICE__PORT: 6333
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY}
+    networks:
+      - workflow-internal
+      - librechat-net
+
+  tika:
+    image: apache/tika:latest
+    container_name: tika
+    restart: unless-stopped
+    networks:
+      - workflow-internal
+
+  # ---------------------------------------------------------------------------
+  #  Data Retention Cleaner - Fysieke schijfopschoning (30 dagen / 720 uur)
+  #  - Verwijdert uploads en gegenereerde afbeeldingen ouder dan RETENTION_HOURS
+  #  - Negeert avatars (-not -path '*/avatar*')
+  #  - Ruimt achtergebleven lege gebruikersmappen automatisch op
+  #  - Draait elk uur (met logging)
+  # ---------------------------------------------------------------------------
+  librechat-retention-cleaner:
+    image: alpine:3.20
+    container_name: librechat-retention-cleaner
+    restart: unless-stopped
+    volumes:
+      - /opt/librechat/uploads:/uploads
+      - /opt/librechat/images:/images
+    environment:
+      RETENTION_HOURS: ${DATA_RETENTION_HOURS:-720}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        cat <<'EOF' > /cleaner.sh
+        #!/bin/sh
+        HOURS="$${RETENTION_HOURS:-720}"
+        MINUTES=$$(( HOURS * 60 ))
+        echo "[$$(date '+%Y-%m-%d %H:%M:%S')] [Retention Cleaner] Start uurlijkse opruimronde (ouder dan $${HOURS}u / $${MINUTES}m)..."
+
+        # 1. Verwijder bestanden ouder dan de bewaartermijn (behalve avatars)
+        find /uploads /images -type f -mmin +$${MINUTES} -not -path '*/avatar*' -delete
+
+        # 2. Ruim leeggekomen gebruikersmappen op (mindepth 2 zodat /uploads en /images zelf blijven bestaan)
+        find /uploads /images -mindepth 2 -type d -empty -delete
+
+        echo "[$$(date '+%Y-%m-%d %H:%M:%S')] [Retention Cleaner] Opruimronde succesvol voltooid."
+        EOF
+
+        chmod +x /cleaner.sh
+
+        # Crontab instellen: elk uur uitvoeren
+        echo "0 * * * * /cleaner.sh" > /etc/crontabs/root
+
+        echo "[Retention Cleaner] Service actief. Bewaartermijn: $${RETENTION_HOURS:-720} uur. Uurlijkse run op minuut 0."
+        crond -f -l 2
+    networks:
+      - librechat-net
+
 networks:
   librechat-net:
     name: librechat-net
+    driver: bridge
+  workflow-internal:
+    name: govchat-workflow-internal
+    driver: bridge
+    internal: true
+  crawler-egress-net:
+    name: govchat-crawler-egress
     driver: bridge
 
 volumes:
   n8n-data:
   n8n-postgres-data:
+  storage_files:
+  librechat-images:
+  qdrant_data:

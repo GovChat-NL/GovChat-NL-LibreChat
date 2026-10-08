@@ -535,3 +535,17 @@ docker compose -f docker-compose.yml --env-file .env exec n8n-openai-bridge wget
 ```bash
 curl ${LITELLM_URL}/v1/models
 ```
+
+## Feature branch: Excel MVP
+
+> [!WARNING]
+> The `feature/excel` branch is an in-progress reference implementation. It provides bounded Excel generation and secure authenticated downloads, but it is not production-ready and does not yet register generated workbooks as native LibreChat attachments/artifacts.
+
+Current Excel MVP scope:
+
+- Generates styled `.xlsx` tables with Provincie Limburg branding.
+- Serves generated files through owner-checked, no-cache authenticated downloads.
+- Integrates as a bounded tool in the central n8n orchestrator.
+- Supports inspection metadata design; multipart inspection integration remains a follow-up for the restricted n8n runner.
+
+Known limitation: LibreChat's native attachment/file card requires a LibreChat-managed file record. The required future core-patch design is documented in [`docs/native-librechat-xlsx-attachment-patch.md`](docs/native-librechat-xlsx-attachment-patch.md). This branch intentionally retains a secure clean download link rather than changing LibreChat core or upgrading the platform.
