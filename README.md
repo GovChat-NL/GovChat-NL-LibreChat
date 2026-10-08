@@ -546,6 +546,7 @@ Current Excel MVP scope:
 - Generates styled `.xlsx` tables with Provincie Limburg branding.
 - Serves generated files through owner-checked, no-cache authenticated downloads.
 - Integrates as a bounded tool in the central n8n orchestrator.
-- Supports inspection metadata design; multipart inspection integration remains a follow-up for the restricted n8n runner.
+- Supports bounded copy-on-write transform operations in the worker (sheet rename/add, cells, appended rows, header styling, filters, and frozen panes).
+- **Uploaded workbook transforms require the separate XLSX bridge dependency** documented in [`docs/bridge-xlsx-upload-dependency.md`](docs/bridge-xlsx-upload-dependency.md). The stock bridge image does not forward workbook bytes.
 
 Known limitation: LibreChat's native attachment/file card requires a LibreChat-managed file record. The required future core-patch design is documented in [`docs/native-librechat-xlsx-attachment-patch.md`](docs/native-librechat-xlsx-attachment-patch.md). This branch intentionally retains a secure clean download link rather than changing LibreChat core or upgrading the platform.

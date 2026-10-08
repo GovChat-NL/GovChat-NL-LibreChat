@@ -448,7 +448,7 @@ services:
     restart: "no"
     command: >
       sh -lc "
-        mkdir -p /storage/files /storage/metadata &&
+        mkdir -p /storage/files /storage/metadata /storage/imports &&
         chown -R 10001:10001 /storage &&
         chmod 0750 /storage /storage/files /storage/metadata
       "
@@ -1120,7 +1120,10 @@ services:
   #  n8n OpenAI Bridge - OpenAI-compatibele laag tussen LibreChat en n8n
   # ---------------------------------------------------------------------------
   n8n-openai-bridge:
-    image: ghcr.io/sveneisenschmidt/n8n-openai-bridge:pr-72
+    build:
+      context: ./vendor/n8n-openai-bridge
+      dockerfile: docker/Dockerfile.build
+    image: ${N8N_OPENAI_BRIDGE_IMAGE:-govchat-n8n-openai-bridge:excel-xlsx-d16a431}
     container_name: n8n-openai-bridge
     restart: unless-stopped
     depends_on:
@@ -1135,6 +1138,7 @@ services:
       MODEL_LOADER_TYPE: file
       MODELS_CONFIG_FILE: /app/models.json
       LOG_REQUESTS: ${N8N_OPENAI_BRIDGE_LOG_REQUESTS:-false}
+      FILE_UPLOAD_MODE: ${N8N_OPENAI_BRIDGE_FILE_UPLOAD_MODE:-passthrough}
       ENABLE_TASK_DETECTION: ${N8N_OPENAI_BRIDGE_ENABLE_TASK_DETECTION:-false}
       SESSION_ID_HEADERS: ${N8N_OPENAI_BRIDGE_SESSION_ID_HEADERS:-X-Session-Id,X-Chat-Id}
       USER_ID_HEADERS: ${N8N_OPENAI_BRIDGE_USER_ID_HEADERS:-X-User-Id}

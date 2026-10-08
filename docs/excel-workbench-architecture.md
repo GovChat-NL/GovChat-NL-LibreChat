@@ -79,3 +79,20 @@ Validate at least:
 ## Deferred work
 
 The existing image route remains unchanged in this branch. Its browser-level Referer/cookie-presence checks should be upgraded later to the same independent authenticated-authorization model.
+
+## Phase 2A: copy-on-write workbook transforms (in progress)
+
+`transform_excel` creates a new workbook from an uploaded `.xlsx`; it never overwrites the source. The worker currently accepts only these validated operations:
+
+- `rename_sheet`
+- `add_sheet`
+- `set_cell`
+- `append_rows`
+- `freeze_panes`
+- `set_auto_filter`
+- `format_range` with the fixed `limburg_header` style
+
+Every operation validates worksheet names, A1 cell/range syntax, row/column limits, and operation count. Arbitrary Python, host paths, URLs, workbook deletion, macros, formulas, external links, and unsupported styling commands remain rejected.
+
+> [!IMPORTANT]
+> End-to-end uploaded-workbook transformation requires the separate bridge dependency in [`docs/bridge-xlsx-upload-dependency.md`](bridge-xlsx-upload-dependency.md). The dependency is not deployed by the default stock bridge image. Do not set `N8N_OPENAI_BRIDGE_FILE_UPLOAD_MODE=extract-xlsx-json` until the reviewed bridge fork commit/image is available.

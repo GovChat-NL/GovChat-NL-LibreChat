@@ -1,0 +1,4 @@
+[submodule "vendor/n8n-openai-bridge"]
+	path = vendor/n8n-openai-bridge
+	url = https://github.com/GovChat-NL/n8n-openai-bridge.git
+	branch = feature/excel-xlsx-attachments

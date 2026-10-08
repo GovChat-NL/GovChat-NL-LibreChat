@@ -6,6 +6,8 @@ trusted only when injected by n8n from LibreChat bridge headers.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
 import json
 import os
@@ -167,6 +169,182 @@ def validate_table(payload: dict[str, Any]) -> tuple[list[str], list[list[Any]],
     return headers, rows, sheet_name, filename
 
 
+def hash_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def write_artifact(
+    workbook: Workbook,
+    display_name: str,
+    user_id: str,
+    conversation_id: str,
+    *,
+    row_count: int,
+    source_sha256: str | None = None,
+    changes: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    FILES_DIR.mkdir(parents=True, exist_ok=True)
+    METADATA_DIR.mkdir(parents=True, exist_ok=True)
+    artifact_id = str(uuid.uuid4())
+    storage_name = f"{artifact_id}.xlsx"
+    target = FILES_DIR / storage_name
+
+    with tempfile.NamedTemporaryFile(dir=FILES_DIR, suffix=".xlsx", delete=False) as temporary:
+        temp_path = Path(temporary.name)
+    try:
+        workbook.save(temp_path)
+        digest = hash_file(temp_path)
+        os.replace(temp_path, target)
+    finally:
+        workbook.close()
+        temp_path.unlink(missing_ok=True)
+
+    created_at = datetime.now(UTC)
+    metadata: dict[str, Any] = {
+        "artifactId": artifact_id,
+        "storageName": storage_name,
+        "displayName": display_name,
+        "mimeType": XLSX_MIME,
+        "ownerUserId": user_id,
+        "conversationId": conversation_id,
+        "rowCount": row_count,
+        "sha256": digest,
+        "createdAt": created_at.isoformat(),
+        "expiresAt": (created_at + timedelta(hours=ARTIFACT_TTL_HOURS)).isoformat(),
+    }
+    if source_sha256:
+        metadata["sourceSha256"] = source_sha256
+    if changes is not None:
+        metadata["changes"] = changes
+
+    metadata_path = METADATA_DIR / f"{artifact_id}.json"
+    temporary_metadata = metadata_path.with_suffix(".json.tmp")
+    temporary_metadata.write_text(json.dumps(metadata, separators=(",", ":")), encoding="utf-8")
+    os.replace(temporary_metadata, metadata_path)
+    return metadata
+
+
+def _sheet(workbook: Workbook, name: Any):
+    sheet_name = normalize_text(name, 31)
+    if not sheet_name or sheet_name not in workbook.sheetnames:
+        raise ClientError("Het opgegeven werkblad bestaat niet.")
+    return workbook[sheet_name]
+
+
+def _cell(value: Any) -> str:
+    cell = normalize_text(value, 16).upper()
+    if not re.fullmatch(r"[A-Z]{1,3}[1-9][0-9]{0,5}", cell):
+        raise ClientError("De opgegeven celreferentie is ongeldig.")
+    return cell
+
+
+def _range(value: Any) -> str:
+    start, separator, end = normalize_text(value, 32).partition(":")
+    if not separator or not start or not end:
+        raise ClientError("Het opgegeven bereik is ongeldig.")
+    return f"{_cell(start)}:{_cell(end)}"
+
+
+def _apply_limburg_header(worksheet, cell_range: str) -> None:
+    fill = PatternFill("solid", fgColor=HEADER_FILL)
+    font = Font(color="FFFFFF", bold=True)
+    border = Border(
+        left=Side(style="thin", color="B7C9E2"),
+        right=Side(style="thin", color="B7C9E2"),
+        top=Side(style="thin", color="B7C9E2"),
+        bottom=Side(style="thin", color="B7C9E2"),
+    )
+    for row in worksheet[cell_range]:
+        for cell in row:
+            cell.fill = fill
+            cell.font = font
+            cell.border = border
+
+
+def transform_workbook(
+    source: Path,
+    request: dict[str, Any],
+    user_id: str,
+    conversation_id: str,
+) -> dict[str, Any]:
+    operations = request.get("operations")
+    if not isinstance(operations, list) or not operations or len(operations) > 50:
+        raise ClientError("Geef 1 tot en met 50 toegestane bewerkingen op.")
+
+    check_xlsx_zip(source)
+    try:
+        workbook = load_workbook(source, data_only=False, keep_vba=False)
+    except Exception as exc:
+        raise ClientError("Het bronbestand is beschadigd, versleuteld of niet leesbaar.") from exc
+
+    changes: list[dict[str, Any]] = []
+    try:
+        for operation in operations:
+            if not isinstance(operation, dict):
+                raise ClientError("Elke bewerking moet een JSON-object zijn.")
+            kind = normalize_text(operation.get("type"), 40)
+
+            if kind == "rename_sheet":
+                worksheet = _sheet(workbook, operation.get("sheet"))
+                new_name = normalize_text(operation.get("newName"), 31)
+                if not new_name or new_name in workbook.sheetnames:
+                    raise ClientError("De nieuwe werkbladnaam is ongeldig of bestaat al.")
+                worksheet.title = new_name
+            elif kind == "add_sheet":
+                sheet_name = normalize_text(operation.get("sheet"), 31)
+                if (
+                    not sheet_name
+                    or sheet_name in workbook.sheetnames
+                    or len(workbook.sheetnames) >= MAX_SHEETS
+                ):
+                    raise ClientError("Het nieuwe werkblad is ongeldig.")
+                workbook.create_sheet(sheet_name)
+            elif kind == "set_cell":
+                worksheet = _sheet(workbook, operation.get("sheet"))
+                worksheet[_cell(operation.get("cell"))] = safe_cell_value(operation.get("value"))
+            elif kind == "append_rows":
+                worksheet = _sheet(workbook, operation.get("sheet"))
+                rows = operation.get("rows")
+                if (
+                    not isinstance(rows, list)
+                    or not rows
+                    or len(rows) + worksheet.max_row > MAX_ROWS
+                ):
+                    raise ClientError("De toe te voegen rijen zijn ongeldig of te omvangrijk.")
+                for row in rows:
+                    if not isinstance(row, list) or len(row) > MAX_COLUMNS:
+                        raise ClientError("Elke rij moet een begrensde lijst zijn.")
+                    worksheet.append([safe_cell_value(value) for value in row])
+            elif kind == "freeze_panes":
+                _sheet(workbook, operation.get("sheet")).freeze_panes = _cell(operation.get("cell"))
+            elif kind == "set_auto_filter":
+                _sheet(workbook, operation.get("sheet")).auto_filter.ref = _range(operation.get("range"))
+            elif kind == "format_range":
+                if operation.get("style") != "limburg_header":
+                    raise ClientError("De opmaakbewerking is niet toegestaan.")
+                _apply_limburg_header(_sheet(workbook, operation.get("sheet")), _range(operation.get("range")))
+            else:
+                raise ClientError("Deze Excel-bewerking is niet toegestaan.")
+            changes.append({"type": kind})
+
+        return write_artifact(
+            workbook,
+            safe_filename(str(request.get("filename", "getransformeerd.xlsx"))),
+            user_id,
+            conversation_id,
+            row_count=sum(worksheet.max_row for worksheet in workbook.worksheets),
+            source_sha256=hash_file(source),
+            changes=changes,
+        )
+    except Exception:
+        workbook.close()
+        raise
+
+
 def create_artifact(payload: dict[str, Any], user_id: str, conversation_id: str) -> dict[str, Any]:
     headers, rows, sheet_name, display_name = validate_table(payload)
     FILES_DIR.mkdir(parents=True, exist_ok=True)
@@ -272,6 +450,45 @@ def generate_styled_excel(request: dict[str, Any]) -> dict[str, Any]:
             "fileName": metadata["displayName"],
             "rowCount": metadata["rowCount"],
             "createdAt": metadata["createdAt"],
+            "downloadPath": f"/api/files/download/{metadata['artifactId']}",
+        }
+    except ClientError as exc:
+        raise fail(str(exc)) from exc
+
+
+@app.post("/v1/transform", dependencies=[Depends(require_service_token)])
+def transform_excel(request: dict[str, Any]) -> dict[str, Any]:
+    try:
+        user_id, conversation_id = valid_identity(
+            str(request.get("userId", "")), str(request.get("conversationId", ""))
+        )
+        source_name = str(request.get("sourceFileName", "bronbestand.xlsx"))
+        source_base64 = str(request.get("sourceFileBase64", ""))
+        if Path(source_name).suffix.lower() != ".xlsx" or not source_base64:
+            raise ClientError("Een geldig geüpload .xlsx-bronbestand ontbreekt.")
+        try:
+            source_bytes = base64.b64decode(source_base64, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise ClientError("Het geüploade bronbestand is ongeldig gecodeerd.") from exc
+        if not source_bytes or len(source_bytes) > MAX_UPLOAD_BYTES:
+            raise ClientError("Het geüploade bronbestand overschrijdt de toegestane limiet.")
+        with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as temporary:
+            source_path = Path(temporary.name)
+            temporary.write(source_bytes)
+        try:
+            if source_path.stat().st_size == 0:
+                raise ClientError("Het geüploade bronbestand is leeg.")
+            check_xlsx_zip(source_path)
+            metadata = transform_workbook(source_path, request, user_id, conversation_id)
+        finally:
+            source_path.unlink(missing_ok=True)
+        return {
+            "ok": True,
+            "artifactId": metadata["artifactId"],
+            "fileName": metadata["displayName"],
+            "rowCount": metadata["rowCount"],
+            "createdAt": metadata["createdAt"],
+            "changes": metadata["changes"],
             "downloadPath": f"/api/files/download/{metadata['artifactId']}",
         }
     except ClientError as exc:

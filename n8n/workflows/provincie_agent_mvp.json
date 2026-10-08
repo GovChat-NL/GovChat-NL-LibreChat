@@ -10,45 +10,91 @@
         "name": "When Executed by Another Workflow",
         "type": "n8n-nodes-base.executeWorkflowTrigger",
         "typeVersion": 1,
-        "position": [-620, 180]
+        "position": [
+          -620,
+          180
+        ]
       },
       {
         "parameters": {
-          "jsCode": "const rawInput = $json && typeof $json === 'object' ? $json : {};\nconst requestJson = String(rawInput.request_json || rawInput.requestJson || '').trim();\nlet input = rawInput;\nif (requestJson) {\n  try { input = JSON.parse(requestJson); } catch { throw new Error('De Excel-tool ontving ongeldige JSON-invoer.'); }\n}\nif (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('De Excel-tool verwacht een JSON-object.');\nconst action = String(input.action || '').trim();\nconst userId = String(rawInput.userId || rawInput.user_id || '').trim();\nconst conversationId = String(rawInput.conversationId || rawInput.conversation_id || '').trim();\nif (!['inspect_excel', 'generate_styled_excel'].includes(action)) throw new Error('Excel-toolactie is ongeldig.');\nif (!userId || !conversationId) throw new Error('Geverifieerde gebruiker- of gesprekssessie ontbreekt.');\nif (action === 'generate_styled_excel') {\n  const headers = Array.isArray(input.headers) ? input.headers : [];\n  const rows = Array.isArray(input.rows) ? input.rows : [];\n  if (!headers.length) throw new Error('Voor het genereren is minstens één kolomkop vereist.');\n  return [{ json: { action, userId, conversationId, filename: String(input.filename || 'provincie-limburg-tabel.xlsx'), sheetName: String(input.sheetName || 'Tabel'), headers, rows } }];\n}\nconst fileBase64 = String(input.fileBase64 || '');\nconst fileName = String(input.fileName || 'bestand.xlsx');\nif (!fileBase64) throw new Error('Voor inspectie is de binaire Excel-bijlage vereist.');\nreturn [{ json: { action, userId, conversationId, fileBase64, fileName } }];"
+          "jsCode": "const rawInput = $json && typeof $json === 'object' ? $json : {};\nconst requestJson = String(rawInput.request_json || rawInput.requestJson || '').trim();\nlet input = rawInput;\nif (requestJson) {\n  try { input = JSON.parse(requestJson); } catch { throw new Error('De Excel-tool ontving ongeldige JSON-invoer.'); }\n}\nif (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('De Excel-tool verwacht een JSON-object.');\nconst action = String(input.action || '').trim();\nconst userId = String(rawInput.userId || rawInput.user_id || '').trim();\nconst conversationId = String(rawInput.conversationId || rawInput.conversation_id || '').trim();\nif (!['inspect_excel', 'generate_styled_excel', 'transform_excel'].includes(action)) throw new Error('Excel-toolactie is ongeldig.');\nif (!userId || !conversationId) throw new Error('Geverifieerde gebruiker- of gesprekssessie ontbreekt.');\nif (action === 'generate_styled_excel') {\n  const headers = Array.isArray(input.headers) ? input.headers : [];\n  const rows = Array.isArray(input.rows) ? input.rows : [];\n  if (!headers.length) throw new Error('Voor het genereren is minstens \u00e9\u00e9n kolomkop vereist.');\n  return [{ json: { action, userId, conversationId, filename: String(input.filename || 'provincie-limburg-tabel.xlsx'), sheetName: String(input.sheetName || 'Tabel'), headers, rows } }];\n}\nif (action === 'transform_excel') {\n  const uploadedFile = rawInput.body?.files?.[0] || rawInput.files?.[0] || {};\n  const sourceFileBase64 = String(uploadedFile.data || rawInput.sourceFileBase64 || '');\n  const sourceFileName = String(uploadedFile.name || rawInput.sourceFileName || '');\n  const operations = Array.isArray(input.operations) ? input.operations : [];\n  if (!sourceFileBase64 || !/\\.xlsx$/i.test(sourceFileName)) throw new Error('Upload een .xlsx-bestand voordat je een bewerking vraagt.');\n  if (!operations.length || operations.length > 50) throw new Error('Geef 1 tot en met 50 toegestane bewerkingen op.');\n  return [{ json: { action, userId, conversationId, filename: String(input.filename || `bewerkt-${sourceFileName}`), sourceFileName, sourceFileBase64, operations } }];\n}\nconst uploadedFile = rawInput.body?.files?.[0] || rawInput.files?.[0] || {};\nconst fileBase64 = String(uploadedFile.data || rawInput.sourceFileBase64 || '');\nconst fileName = String(uploadedFile.name || rawInput.sourceFileName || 'bestand.xlsx');\nif (!fileBase64) throw new Error('Voor inspectie is de binaire Excel-bijlage vereist.');\nreturn [{ json: { action, userId, conversationId, fileBase64, fileName } }];"
         },
         "id": "ValidateTrustedExcelRequest",
         "name": "Validate trusted Excel request",
         "type": "n8n-nodes-base.code",
         "typeVersion": 2,
-        "position": [-380, 180]
+        "position": [
+          -380,
+          180
+        ]
       },
       {
         "parameters": {
-          "jsCode": "const input = $json;\nconst baseUrl = String($env.EXCEL_WORKER_URL || 'http://excel-worker:8080').replace(/\\/$/, '');\nconst token = String($env.EXCEL_INTERNAL_API_TOKEN || '').trim();\nif (!token) throw new Error('Excel service token ontbreekt.');\nconst headers = { Authorization: 'Bearer ' + token };\nconst http = require('http');\nconst https = require('https');\nconst { URL } = require('url');\nfunction request(url, options, body) {\n  return new Promise((resolve, reject) => {\n    const target = new URL(url);\n    const client = target.protocol === 'https:' ? https : http;\n    const req = client.request({ protocol: target.protocol, hostname: target.hostname, port: target.port, path: target.pathname + target.search, method: options.method || 'POST', headers: options.headers || {} }, (res) => {\n      let text = '';\n      res.setEncoding('utf8');\n      res.on('data', (chunk) => { text += chunk; });\n      res.on('end', () => resolve({ status: res.statusCode || 0, text }));\n    });\n    req.on('error', reject);\n    req.setTimeout(120000, () => req.destroy(new Error('Excel-service timeout.')));\n    if (body) req.write(body);\n    req.end();\n  });\n}\nlet response;\nif (input.action === 'generate_styled_excel') {\n  const body = JSON.stringify({ userId: input.userId, conversationId: input.conversationId, filename: input.filename, sheetName: input.sheetName, headers: input.headers, rows: input.rows });\n  response = await request(baseUrl + '/v1/generate', { headers: { ...headers, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } }, body);\n} else {\n  throw new Error('Excel-inspectie via bestandsbijlage wordt in deze eerste toolversie nog niet ondersteund.');\n}\nlet payload = {};\ntry { payload = JSON.parse(response.text); } catch {}\nif (response.status < 200 || response.status >= 300 || !payload.ok) throw new Error(String(payload.detail || 'Excel-verwerking is mislukt.'));\nreturn [{ json: { action: input.action, result: payload } }];"
+          "jsCode": "const input = $json;\nconst baseUrl = String($env.EXCEL_WORKER_URL || 'http://excel-worker:8080').replace(/\\/$/, '');\nconst token = String($env.EXCEL_INTERNAL_API_TOKEN || '').trim();\nif (!token) throw new Error('Excel service token ontbreekt.');\nconst headers = { Authorization: 'Bearer ' + token };\nconst http = require('http');\nconst https = require('https');\nconst { URL } = require('url');\nfunction request(url, options, body) {\n  return new Promise((resolve, reject) => {\n    const target = new URL(url);\n    const client = target.protocol === 'https:' ? https : http;\n    const req = client.request({ protocol: target.protocol, hostname: target.hostname, port: target.port, path: target.pathname + target.search, method: options.method || 'POST', headers: options.headers || {} }, (res) => {\n      let text = '';\n      res.setEncoding('utf8');\n      res.on('data', (chunk) => { text += chunk; });\n      res.on('end', () => resolve({ status: res.statusCode || 0, text }));\n    });\n    req.on('error', reject);\n    req.setTimeout(120000, () => req.destroy(new Error('Excel-service timeout.')));\n    if (body) req.write(body);\n    req.end();\n  });\n}\nlet response;\nif (input.action === 'generate_styled_excel') {\n  const body = JSON.stringify({ userId: input.userId, conversationId: input.conversationId, filename: input.filename, sheetName: input.sheetName, headers: input.headers, rows: input.rows });\n  response = await request(baseUrl + '/v1/generate', { headers: { ...headers, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } }, body);\n} else if (input.action === 'transform_excel') {\n  const body = JSON.stringify({ userId: input.userId, conversationId: input.conversationId, filename: input.filename, sourceFileName: input.sourceFileName, sourceFileBase64: input.sourceFileBase64, operations: input.operations });\n  response = await request(baseUrl + '/v1/transform', { headers: { ...headers, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } }, body);\n} else {\n  throw new Error('Excel-inspectie via bestandsbijlage wordt in deze eerste toolversie nog niet ondersteund.');\n}\nlet payload = {};\ntry { payload = JSON.parse(response.text); } catch {}\nif (response.status < 200 || response.status >= 300 || !payload.ok) throw new Error(String(payload.detail || 'Excel-verwerking is mislukt.'));\nreturn [{ json: { action: input.action, result: payload } }];"
         },
         "id": "CallPrivateExcelWorker",
         "name": "Call private Excel worker",
         "type": "n8n-nodes-base.code",
         "typeVersion": 2,
-        "position": [-120, 180]
+        "position": [
+          -120,
+          180
+        ]
       },
       {
         "parameters": {
-          "jsCode": "const { action, result } = $json;\nif (action === 'generate_styled_excel') {\n  const date = new Intl.DateTimeFormat('nl-NL', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Europe/Amsterdam' }).format(new Date(result.createdAt));\n  const fileName = String(result.fileName || 'excel-bestand.xlsx').replace(/[\\[\\]\\r\\n]/g, '');\n  const response = `## Excel-bestand gereed\\n\\n> **Bestand:** \\`${fileName}\\`  \\n> **Inhoud:** ${result.rowCount} rijen  \\n> **Aangemaakt:** ${date}\\n\\n[📥 Download ${fileName}](${result.downloadPath})`;\n  return [{ json: { response, artifact: { type: 'file', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', fileName, downloadPath: result.downloadPath, rowCount: result.rowCount, createdAt: result.createdAt } } }];\n}\nconst sheets = Array.isArray(result.sheets) ? result.sheets : [];\nconst overview = sheets.map((sheet) => `### ${sheet.name}\\nKolommen: ${(sheet.columns || []).join(', ') || 'geen'}\\nVoorbeeldrijen: ${JSON.stringify(sheet.sampleRows || [])}`).join('\\n\\n');\nreturn [{ json: { response: `## Excel-inspectie: ${result.fileName}\\n\\n${overview || 'Geen werkbladen gevonden.'}`, inspection: { fileName: result.fileName, sheets } } }];"
+          "jsCode": "const { action, result } = $json;\nif (action === 'generate_styled_excel' || action === 'transform_excel') {\n  const date = new Intl.DateTimeFormat('nl-NL', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Europe/Amsterdam' }).format(new Date(result.createdAt));\n  const fileName = String(result.fileName || 'excel-bestand.xlsx').replace(/[\\[\\]\\r\\n]/g, '');\n  const changeText = action === 'transform_excel' ? `\\n> **Uitgevoerd:** ${(result.changes || []).map((change) => change.type).join(', ') || 'bewerkingen'}` : '';\n  const response = `## Excel-bestand gereed\\n\\n> **Bestand:** \\`${fileName}\\`  \\n> **Inhoud:** ${result.rowCount} rijen  \\n> **Aangemaakt:** ${date}${changeText}\\n\\n[\ud83d\udce5 Download ${fileName}](${result.downloadPath})`;\n  return [{ json: { response, artifact: { type: 'file', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', fileName, downloadPath: result.downloadPath, rowCount: result.rowCount, createdAt: result.createdAt } } }];\n}\nconst sheets = Array.isArray(result.sheets) ? result.sheets : [];\nconst overview = sheets.map((sheet) => `### ${sheet.name}\\nKolommen: ${(sheet.columns || []).join(', ') || 'geen'}\\nVoorbeeldrijen: ${JSON.stringify(sheet.sampleRows || [])}`).join('\\n\\n');\nreturn [{ json: { response: `## Excel-inspectie: ${result.fileName}\\n\\n${overview || 'Geen werkbladen gevonden.'}`, inspection: { fileName: result.fileName, sheets } } }];"
         },
         "id": "BuildArtifactResponse",
         "name": "Build Excel artifact response",
         "type": "n8n-nodes-base.code",
         "typeVersion": 2,
-        "position": [140, 180]
+        "position": [
+          140,
+          180
+        ]
       }
     ],
     "connections": {
-      "When Executed by Another Workflow": { "main": [[{ "node": "Validate trusted Excel request", "type": "main", "index": 0 }]] },
-      "Validate trusted Excel request": { "main": [[{ "node": "Call private Excel worker", "type": "main", "index": 0 }]] },
-      "Call private Excel worker": { "main": [[{ "node": "Build Excel artifact response", "type": "main", "index": 0 }]] }
+      "When Executed by Another Workflow": {
+        "main": [
+          [
+            {
+              "node": "Validate trusted Excel request",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Validate trusted Excel request": {
+        "main": [
+          [
+            {
+              "node": "Call private Excel worker",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Call private Excel worker": {
+        "main": [
+          [
+            {
+              "node": "Build Excel artifact response",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
     },
-    "settings": { "executionOrder": "v1", "saveExecutionProgress": false, "saveManualExecutions": false },
+    "settings": {
+      "executionOrder": "v1",
+      "saveExecutionProgress": false,
+      "saveManualExecutions": false
+    },
     "pinData": {},
     "versionId": "8b6a5f6c-17f1-4ed1-9a66-3bf89d5fe0ed"
   }

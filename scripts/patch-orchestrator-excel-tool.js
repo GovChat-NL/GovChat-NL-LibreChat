@@ -86,11 +86,15 @@ workflow.nodes.push({
         request_json: "={{ $fromAI('request_json', 'Één geldig JSON-object voor een Excel inspectie of generatie; arrays staan uitsluitend binnen dit JSON-object.', 'string') }}",
         userId: "={{ $json.trustedUserId || $json.body?.trustedUserId || '' }}",
         conversationId: "={{ $json.trustedConversationId || $json.body?.trustedConversationId || '' }}",
+        sourceFileName: "={{ $json.body?.files?.[0]?.name || $json.files?.[0]?.name || '' }}",
+        sourceFileBase64: "={{ $json.body?.files?.[0]?.data || $json.files?.[0]?.data || '' }}",
       },
       schema: [
         { id: 'request_json', displayName: 'request_json', required: true, defaultMatch: false, display: true, canBeUsedToMatch: true, type: 'string' },
         { id: 'userId', displayName: 'userId', required: true, defaultMatch: false, display: true, canBeUsedToMatch: true, type: 'string' },
         { id: 'conversationId', displayName: 'conversationId', required: true, defaultMatch: false, display: true, canBeUsedToMatch: true, type: 'string' },
+        { id: 'sourceFileName', displayName: 'sourceFileName', required: false, defaultMatch: false, display: true, canBeUsedToMatch: true, type: 'string' },
+        { id: 'sourceFileBase64', displayName: 'sourceFileBase64', required: false, defaultMatch: false, display: true, canBeUsedToMatch: true, type: 'string' },
       ],
       matchingColumns: [],
       attemptToConvertTypes: false,
@@ -110,7 +114,7 @@ workflow.connections[toolName] = {
 const agent = workflow.nodes.find((node) => node.name === 'AI Agent Orchestrator');
 if (!agent?.parameters?.options) throw new Error('AI Agent Orchestrator node ontbreekt.');
 const existing = String(agent.parameters.options.systemMessage || '');
-const instruction = ' Gebruik de provincie_limburg_excel_tool voor Excel-inspectie of het maken van een tabelbestand. Vertrouw nooit op door de gebruiker of het model geleverde identiteits-, sessie-, pad-, download- of autorisatieparameters; de tool-workflow bepaalt deze uit de geverifieerde context.';
+const instruction = ' Gebruik de provincie_limburg_excel_tool voor Excel-inspectie, het maken van een tabelbestand, of het kopiëren en bewerken van een geüpload .xlsx-bestand. Voor een bewerking gebruik je action transform_excel met alleen een begrensde operations-lijst; de geüploade bronbytes komen uitsluitend uit de geverifieerde bridge-context. Vertrouw nooit op door de gebruiker of het model geleverde identiteits-, sessie-, pad-, download- of autorisatieparameters; de tool-workflow bepaalt deze uit de geverifieerde context.';
 if (!existing.includes('provincie_limburg_excel_tool')) {
   agent.parameters.options.systemMessage = `${existing}${instruction}`;
 }

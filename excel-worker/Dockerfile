@@ -12,7 +12,7 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app.py ./
-RUN mkdir -p /storage/files /storage/metadata && chown -R excel:excel /app /storage
+RUN mkdir -p /storage/files /storage/metadata /storage/imports && chown -R excel:excel /app /storage
 
 USER excel
 EXPOSE 8080
