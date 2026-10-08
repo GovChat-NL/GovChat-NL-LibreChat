@@ -78,14 +78,18 @@ command -v python3 >/dev/null || { echo 'python3 is required' >&2; exit 4; }
 mkdir -p "$OUTPUT_DIR"
 OUTPUT_DIR=$(cd "$OUTPUT_DIR" && pwd)
 
-COLLECTION_JSON=$(qdrant_curl "$QDRANT_URL/collections/$COLLECTION")
-CHECKPOINT_JSON=$(qdrant_curl "$QDRANT_URL/collections/$COLLECTION/points/$CHECKPOINT_ID")
+COLLECTION_JSON_FILE=$(mktemp)
+CHECKPOINT_JSON_FILE=$(mktemp)
+trap 'rm -f "$COLLECTION_JSON_FILE" "$CHECKPOINT_JSON_FILE"' EXIT
+qdrant_curl "$QDRANT_URL/collections/$COLLECTION" > "$COLLECTION_JSON_FILE"
+qdrant_curl "$QDRANT_URL/collections/$COLLECTION/points/$CHECKPOINT_ID" > "$CHECKPOINT_JSON_FILE"
 
-python3 - "$COLLECTION_JSON" "$CHECKPOINT_JSON" "$SOURCE_KEY" "$QDRANT_VECTOR_SIZE" "$QDRANT_DISTANCE" <<'PY'
+python3 - "$COLLECTION_JSON_FILE" "$CHECKPOINT_JSON_FILE" "$SOURCE_KEY" "$QDRANT_VECTOR_SIZE" "$QDRANT_DISTANCE" <<'PY'
 import json
 import sys
-collection = json.loads(sys.argv[1])
-checkpoint = json.loads(sys.argv[2])
+from pathlib import Path
+collection = json.loads(Path(sys.argv[1]).read_text())
+checkpoint = json.loads(Path(sys.argv[2]).read_text())
 source_key, size, distance = sys.argv[3:]
 result = collection.get('result', {})
 params = result.get('config', {}).get('params', {}).get('vectors', {})
@@ -109,21 +113,22 @@ EOF
 [ -n "$SNAPSHOT_NAME" ] || { echo 'Qdrant did not return a snapshot name' >&2; exit 5; }
 
 SNAPSHOT_FILE="$OUTPUT_DIR/$SNAPSHOT_NAME"
-docker cp "$QDRANT_CONTAINER:/qdrant/snapshots/$SNAPSHOT_NAME" "$SNAPSHOT_FILE"
+docker cp "$QDRANT_CONTAINER:/qdrant/snapshots/$COLLECTION/$SNAPSHOT_NAME" "$SNAPSHOT_FILE"
 SHA256=$(sha256sum "$SNAPSHOT_FILE" | awk '{print $1}')
 BYTES=$(wc -c < "$SNAPSHOT_FILE" | tr -d ' ')
 CREATED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 MANIFEST_FILE="$OUTPUT_DIR/openbesluitvorming-${SOURCE_KEY}-${TAG}.manifest.json"
 
-python3 - "$COLLECTION_JSON" "$CHECKPOINT_JSON" "$MANIFEST_FILE" "$TAG" "$SOURCE_KEY" "$COLLECTION" "$SNAPSHOT_NAME" "$SHA256" "$BYTES" "$CREATED_AT" "$EMBEDDING_MODEL" <<'PY'
+python3 - "$COLLECTION_JSON_FILE" "$CHECKPOINT_JSON_FILE" "$MANIFEST_FILE" "$TAG" "$SOURCE_KEY" "$COLLECTION" "$SNAPSHOT_NAME" "$SHA256" "$BYTES" "$CREATED_AT" "$EMBEDDING_MODEL" <<'PY'
 import json
 import sys
 (
     collection_json, checkpoint_json, manifest_file, tag, source_key,
     collection_name, snapshot_name, sha256, bytes_, created_at, embedding_model,
 ) = sys.argv[1:]
-collection = json.loads(collection_json)['result']
-checkpoint = json.loads(checkpoint_json)['result']['payload']
+from pathlib import Path
+collection = json.loads(Path(collection_json).read_text())['result']
+checkpoint = json.loads(Path(checkpoint_json).read_text())['result']['payload']
 manifest = {
     'format_version': 1,
     'dataset': 'openbesluitvorming-qdrant-starter',

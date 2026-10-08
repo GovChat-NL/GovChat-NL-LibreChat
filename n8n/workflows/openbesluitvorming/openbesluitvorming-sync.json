@@ -26,14 +26,14 @@
         "rule": {
           "interval": [
             {
-              "field": "hours",
-              "hoursInterval": 6
+              "field": "cronExpression",
+              "expression": "0 0 0,6,12,18 * * *"
             }
           ]
         }
       },
       "id": "ob-sync-002",
-      "name": "1. Sync Every Six Hours",
+      "name": "1. Sync At 00 06 12 18 UTC",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
       "position": [
@@ -247,21 +247,41 @@
         1640,
         100
       ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.deletePointIds.length > 0 }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "ob-sync-011b",
+      "name": "10b. Tombstones Present?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        820,
+        100
+      ]
     }
   ],
   "connections": {
     "1. Start Sync Manually": {
-      "main": [
-        [
-          {
-            "node": "2. Configure Delta Sync",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "1. Sync Every Six Hours": {
       "main": [
         [
           {
@@ -353,7 +373,7 @@
       "main": [
         [
           {
-            "node": "11. Apply Tombstone Deletes",
+            "node": "10b. Tombstones Present?",
             "type": "main",
             "index": 0
           }
@@ -387,6 +407,35 @@
         [
           {
             "node": "14. Log Sync Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "10b. Tombstones Present?": {
+      "main": [
+        [
+          {
+            "node": "11. Apply Tombstone Deletes",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "12. Commit Delta Cursor Only After Apply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "1. Sync At 00 06 12 18 UTC": {
+      "main": [
+        [
+          {
+            "node": "2. Configure Delta Sync",
             "type": "main",
             "index": 0
           }
