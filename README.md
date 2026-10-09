@@ -164,6 +164,40 @@ De **standaard chat** is gekoppeld via [`librechat.yaml`](librechat.yaml) aan [`
 - bridge model `govchat-orchestrator` -> `http://n8n:5678/webhook/orchestrator`
 - bridge-authenticatie via `${N8N_OPENAI_BRIDGE_BEARER_TOKEN}`
 
+### Live zichtbaarheid van n8n-toolcalls in LibreChat
+
+Wanneer de n8n-orchestrator tijdens een antwoord een tool gebruikt, toont LibreChat een **native tool-call kaart** in het gesprek. De gebruiker ziet daardoor tijdens de uitvoering welke actie n8n uitvoert, met de originele toolnaam en invoerargumenten, en ziet wanneer de actie is afgerond. Dit vervangt algemene voortgangspop-ups bij bijvoorbeeld afbeeldingsgeneratie.
+
+De kaart is uitsluitend voortgangs- en transparantie-informatie: **n8n blijft de uitvoerder**. LibreChat probeert deze calls niet opnieuw lokaal uit te voeren. Na de n8n-uitvoering verschijnt het gewone uiteindelijke assistentantwoord in hetzelfde gesprek.
+
+#### Datastroom en contract
+
+1. LibreChat opent een streaming chatverzoek naar de bridge.
+2. n8n gebruikt de OpenAI-compatibele relay van de bridge voor een tool-capabele modelaanroep.
+3. De bridge herkent tool calls in die upstream-stream en koppelt ze aan de nog actieve LibreChat-stream.
+4. De bridge stuurt voor elke call:
+   - een `running` lifecycle-event;
+   - een reguliere OpenAI `tool_calls` delta voor compatibiliteit;
+   - een `completed` lifecycle-event wanneer het n8n-antwoord klaar is.
+5. LibreChat rendert zijn bestaande tool-call UI en slaat het antwoord normaal op.
+
+De bridge-implementatie staat in [`n8n-openai-bridge-src/src/utils/externalToolEvents.js`](n8n-openai-bridge-src/src/utils/externalToolEvents.js), de upstream relay in [`n8n-openai-bridge-src/src/routes/openaiToolProxy.js`](n8n-openai-bridge-src/src/routes/openaiToolProxy.js) en de streamingvolgorde in [`n8n-openai-bridge-src/src/handlers/streamingHandler.js`](n8n-openai-bridge-src/src/handlers/streamingHandler.js).
+
+#### Veiligheid en afbakening
+
+De functionaliteit is niet algemeen ingeschakeld voor onbekende tools. [`librechat.yaml`](librechat.yaml) activeert externe uitvoering alleen voor endpoint `govchat-orchestrator` en accepteert alleen lifecycle-events met provider `workflow-engine`. Calls zonder deze expliciete markering blijven het normale LibreChat-pad volgen. Dit voorkomt dat een willekeurige onbekende toolnaam lokale validatie of autorisatie omzeilt.
+
+#### Build, upgrade en rollback
+
+Omdat upstream LibreChat deze contractondersteuning nog niet heeft opgenomen, wordt een kleine, reproduceerbare extensie gebouwd:
+
+- [`Dockerfile.librechat-external-tools`](Dockerfile.librechat-external-tools) cloneert gepinde upstream-versies van LibreChat (`v0.8.7`) en Agents (`v3.2.46`).
+- De minimale wijzigingen staan als controleerbare patches in [`patches/librechat-external-tool-execution.patch`](patches/librechat-external-tool-execution.patch) en [`patches/librechat-agents-external-tool-execution.patch`](patches/librechat-agents-external-tool-execution.patch).
+- De finale runtime blijft de officiële image `registry.librechat.ai/danny-avila/librechat:v0.8.7`; alleen de gecompileerde packages worden vervangen.
+- [`docker-compose.yml`](docker-compose.yml) bouwt de LibreChat-extensie én de GovChat-versie van de bridge uit broncode.
+
+Bij een LibreChat- of Agents-upgrade moeten de twee patches eerst tegen de nieuwe gepinde revisies worden toegepast en de relevante bridge-tests en een handmatige toolcall worden uitgevoerd. Voor een directe rollback kan de `librechat`-service terug naar de officiële image zonder `build`-blok; schakel dan ook `externalToolExecution` uit in [`librechat.yaml`](librechat.yaml). De chat en n8n-workflows blijven dan beschikbaar, maar de live native tool-call kaarten verdwijnen.
+
 ### Context/token usage indicator (default uit)
 
 In deze stack staat de LibreChat context/token-indicator standaard uit in [`librechat.yaml`](librechat.yaml):
