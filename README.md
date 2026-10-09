@@ -31,6 +31,62 @@ Deze stack is in de praktijk breder dan alleen “orchestrator + versimpelaar”
 
 > Let op: in deze specifieke stack staan `pgvector` + `rag-api` centraal voor optionele RAG-profielen. Qdrant wordt elders in GovChat-context genoemd, maar is geen standaardservice in deze compose.
 
+## OpenBesluitvorming: open publieke besluitvorming als kernfunctie
+
+GovChat-NL ondersteunt [OpenBesluitvorming](https://openbesluitvorming.nl/): de open infrastructuur voor het toegankelijk maken van publieke besluitvorming. We bedanken de makers en bijdragers van het project voor hun werk aan een open, herbruikbare basis voor overheidsinformatie.
+
+- Website: [openbesluitvorming.nl](https://openbesluitvorming.nl/)
+- Broncode en samenwerking: [ontola/openbesluitvorming](https://github.com/ontola/openbesluitvorming)
+- API-documentatie: [openbesluitvorming.nl/docs/api](https://openbesluitvorming.nl/docs/api)
+
+We adopteren OpenBesluitvorming als kernfunctionaliteit van GovChat-NL: de chat moet publieke besluitvorming niet alleen kunnen samenvatten, maar ook herleidbaar kunnen doorzoeken en daarover kunnen antwoorden met broncontext. De implementatie op de branch `feature/openbesluitvorming` levert hiervoor de eerste bouwsteen: een generieke, inactieve n8n-ingestflow die een organisatie-snapshot via de OpenBesluitvorming-API verwerkt, documentmetadata bewaart en embeddings in een private Qdrant-collectie schrijft.
+
+### Huidige implementatiestatus en vervolgstappen
+
+De huidige workflowassets staan in deze repository, zodat ze als standaard GovChat-NL-workflows kunnen worden gebootstrapt:
+
+- [`openbesluitvorming-document-worker.json`](n8n/workflows/openbesluitvorming/openbesluitvorming-document-worker.json): haalt volledige documentinhoud op, verwerkt deze in begrensde embedding-batches en maakt per document een vector met gewogen mean pooling.
+- [`openbesluitvorming-ingest.json`](n8n/workflows/openbesluitvorming/openbesluitvorming-ingest.json): verwerkt één cursorpagina per uitvoering, bewaart een duurzaam checkpoint in Qdrant en registreert individuele dead letters zonder de rest van de ingest te stoppen.
+- [`openbesluitvorming-search.json`](n8n/workflows/openbesluitvorming/openbesluitvorming-search.json): zoekt met hoge recall via zichtbare n8n-stappen voor query-varianten, brede Qdrant-kandidaten, document-level reciprocal-rank fusion, optionele LiteLLM-reranking en een dynamische output met bronverwijzingen.
+- [`openbesluitvorming-sync.json`](n8n/workflows/openbesluitvorming/openbesluitvorming-sync.json): verwerkt incrementele OpenBesluitvorming-wijzigingen via de gedocumenteerde `/api/export/changes` feed, inclusief upserts en verwijderingen.
+- [`orchestrator-openbesluitvorming.json`](n8n/workflows/openbesluitvorming/orchestrator-openbesluitvorming.json): bouwt voort op de bestaande GovChat-orchestrator en voegt de zoektool toe voor vragen over openbare besluitvorming.
+
+De ingest- en zoekworkflow zijn bewust **inactief** en bevatten geen organisatie- of collectie-specifieke standaardwaarde. Stel vóór activering in de zichtbare configuratienode minimaal `sourceKey` en `collection` in. Raadpleeg daarbij de [OpenBesluitvorming API-documentatie](https://openbesluitvorming.nl/docs/api) voor de beschikbare bronnen, snapshot-cursors en entiteitseigenschappen.
+
+### Zoekkwaliteit, herleidbaarheid en politieke zorgvuldigheid
+
+De zoekworkflow is gebaseerd op de bestaande kandidaat- en rerankopzet, maar is generiek gemaakt en gericht op het verkleinen van het risico dat relevante documenten stilzwijgend wegvallen:
+
+1. de oorspronkelijke vraag wordt aangevuld met begrensde zoekvarianten, waaronder onderscheidende termen en aangehaalde frases;
+2. elke variant haalt een brede kandidaatset op (`candidate_limit`, standaard 500 per variant) en kan optioneel op `source_key` filteren;
+3. kandidaten worden op brondocumentniveau samengevoegd met reciprocal-rank fusion, zodat een document dat bij meerdere formuleringen terugkomt extra gewicht krijgt;
+4. alle unieke documenten gaan naar de reranker zolang de gefuseerde set hoogstens 500 documenten bevat (dus ook een dossier met 220 documenten); alleen daarboven geldt een harde, auditeerbare capaciteitgrens van 500 met een gerapporteerde fused-scoregrens en aantal uitgesloten kandidaten; als reranking faalt, blijft de gefuseerde brede kandidaatset bruikbaar en wordt die fallback expliciet gemarkeerd;
+5. elk resultaat bevat herleidbare bronvelden, zoals `source_id`, titel, datum en beschikbare originele/download/PDF-URL's, plus `candidate_pool`-statistiek en `coverage_notice`.
+
+Dit is nadrukkelijk **geen volledigheidsgarantie**. Vectorzoekresultaten bewijzen niet dat alle relevante publieke stukken zijn gevonden. Bij politiek gevoelige vragen moet de orchestrator daarom de zoektool gebruiken, bronlinks in het antwoord tonen, geen niet-gevonden informatie invullen en de dekkingbeperking communiceren. Herhaal zo nodig de zoekopdracht met andere bewoordingen, verhoog `candidate_limit`/`result_limit`, verwijder of verbreed filters en controleer de primaire documenten.
+
+Belangrijkste toolparameters: `query`, optioneel `source_key`, `collection`, `candidate_limit` (50–500, standaard 500), `rerank_limit` (50–500, standaard 500), `result_limit` (10–100) en `include_content`. De standaardcollectie heet `openbesluitvorming`; kies in een concrete installatie de collectie die bij die ingest hoort.
+
+### Incrementele synchronisatie na de initiële snapshot
+
+De aanbevolen frequentie voor [`openbesluitvorming-sync.json`](n8n/workflows/openbesluitvorming/openbesluitvorming-sync.json) is **eens per zes uur**. Dit is ruim onder de API-limiet en beperkt tegelijkertijd de belasting van embeddings en Qdrant. Per uitvoering haalt de workflow maximaal één wijzigingenpagina van 500 records op; er is bewust geen paginglus. Als de wijzigingsfeed achterloopt, pakt de volgende zes-uurlijkse uitvoering veilig verder op vanaf de duurzaam opgeslagen cursor.
+
+De syncworkflow is standaard **inactief** en mag pas worden geactiveerd nadat de initiële snapshot voltooid is. Hij leest hetzelfde Qdrant-checkpoint als de snapshotworkflow en stopt zonder API-call wanneer `completed` niet waar is. Daarna gebruikt hij `X-Changes-Cursor` uit de eerste snapshotpagina voor [`/api/export/changes`](https://openbesluitvorming.nl/docs/api). Upserts gaan via dezelfde documentworker; tombstones verwijderen de deterministische Qdrant-punten. De delta-cursor wordt uitsluitend gecommit nadat beide stappen succesvol zijn verwerkt. Daarmee kan de synchronisatie de initiële ingest niet inhalen, overschrijven of verstoren.
+
+De geplande vervolgstappen op deze branch zijn:
+
+1. de gevalideerde punten voor Provincie Limburg gecontroleerd beschikbaar maken;
+2. gebruikers- en beheerdocumentatie uitbreiden met configuratie, filtering, bronverwijzing, beheer van dead letters en operationele controles;
+3. retrieval-evaluaties toevoegen met representatieve politieke vragen, alternatieve formuleringen en gecontroleerde bronverwijzingen.
+
+## Distributie van een vooraf gevulde starterdataset
+
+Een vooraf gevulde Provincie Limburg-vectorcollectie wordt niet als binary in Git opgeslagen. De ondersteunde distributievorm is een versiegebonden, native Qdrant-snapshot als immutable GitHub Release asset, met een SHA-256-gecontroleerd manifest. Dit voorkomt grote Git-geschiedenissen en maakt intrekking of vervanging van data mogelijk zonder broncodegeschiedenis te herschrijven.
+
+Zie [`docs/openbesluitvorming-release-artifacts.md`](docs/openbesluitvorming-release-artifacts.md) voor de expliciete publicatie- en herstelprocedure, governancevoorwaarden, provenance, refresh- en withdrawalbeleid. De scripts [`openbesluitvorming-release-snapshot.sh`](scripts/openbesluitvorming-release-snapshot.sh) en [`openbesluitvorming-restore-release-snapshot.sh`](scripts/openbesluitvorming-restore-release-snapshot.sh) maken of herstellen alleen na een expliciete operator-acknowledgement; zij uploaden niet automatisch en starten geen ingestworkflow.
+
+De release-artifact route wordt pas gebruikt nadat de initiële snapshot is afgerond en een review heeft bevestigd dat verspreiding via GitHub passend is voor de bronmetadata en content previews. Latere wijzigingen lopen via de incrementele sync, niet via een gewijzigde bestaande release.
+
 ## Services in de standaard (simpele) start
 
 Standaard actief met `docker compose up -d`:

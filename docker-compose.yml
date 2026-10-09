@@ -478,6 +478,13 @@ services:
       N8N_LITELLM_IMAGE_MODEL: ${N8N_LITELLM_IMAGE_MODEL:-gpt-image-1}
       N8N_WEBHOOK_TOKEN: ${N8N_WEBHOOK_TOKEN}
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
+      # Open Besluitvorming: enabled by default; configure default source keys per deployment.
+      N8N_ENABLE_OPENBESLUITVORMING: ${N8N_ENABLE_OPENBESLUITVORMING:-true}
+      OPENBESLUITVORMING_COLLECTION: ${OPENBESLUITVORMING_COLLECTION:-openraadsinformatie_v1}
+      OPENBESLUITVORMING_DEFAULT_SOURCES: ${OPENBESLUITVORMING_DEFAULT_SOURCES:-${OPENBESLUITVORMING_DEFAULT_SOURCE:-provincie_limburg}}
+      OPENBESLUITVORMING_DEFAULT_SOURCE: ${OPENBESLUITVORMING_DEFAULT_SOURCE:-provincie_limburg}
+      OPENBESLUITVORMING_QDRANT_URL: ${OPENBESLUITVORMING_QDRANT_URL:-http://qdrant:6333}
+      OPENBESLUITVORMING_EMBEDDING_MODEL: ${OPENBESLUITVORMING_EMBEDDING_MODEL:-govchat-embedding}
       CRAWLER_ADMIN_BASE_URL: ${CRAWLER_ADMIN_BASE_URL:-http://govchat-overlay-admin:3002}
       CRAWLER_INTERNAL_TOKEN: ${CRAWLER_INTERNAL_TOKEN:-${N8N_WEBHOOK_TOKEN}}
     volumes:
@@ -519,6 +526,12 @@ services:
       N8N_LITELLM_IMAGE_API_KEY: ${N8N_LITELLM_IMAGE_API_KEY:-${LITELLM_API_KEY}}
       N8N_LITELLM_IMAGE_MODEL: ${N8N_LITELLM_IMAGE_MODEL:-gpt-image-1}
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
+      N8N_ENABLE_OPENBESLUITVORMING: ${N8N_ENABLE_OPENBESLUITVORMING:-true}
+      OPENBESLUITVORMING_COLLECTION: ${OPENBESLUITVORMING_COLLECTION:-openraadsinformatie_v1}
+      OPENBESLUITVORMING_DEFAULT_SOURCES: ${OPENBESLUITVORMING_DEFAULT_SOURCES:-${OPENBESLUITVORMING_DEFAULT_SOURCE:-provincie_limburg}}
+      OPENBESLUITVORMING_DEFAULT_SOURCE: ${OPENBESLUITVORMING_DEFAULT_SOURCE:-provincie_limburg}
+      OPENBESLUITVORMING_QDRANT_URL: ${OPENBESLUITVORMING_QDRANT_URL:-http://qdrant:6333}
+      OPENBESLUITVORMING_EMBEDDING_MODEL: ${OPENBESLUITVORMING_EMBEDDING_MODEL:-govchat-embedding}
       N8N_RUNNERS_AUTO_SHUTDOWN_TIMEOUT: "30"
       N8N_RUNNERS_TASK_TIMEOUT: "180"
       N8N_RUNNERS_LAUNCHER_LOG_LEVEL: warn
@@ -540,6 +553,8 @@ services:
         condition: service_healthy
       n8n-runners:
         condition: service_started
+      qdrant:
+        condition: service_healthy
     environment:
       DB_TYPE: postgresdb
       DB_POSTGRESDB_HOST: n8n-postgres
@@ -559,12 +574,14 @@ services:
       LITELLM_API_KEY: ${LITELLM_API_KEY}
       AGENTS_WORKFLOW_SOURCE: ${AGENTS_WORKFLOW_SOURCE:-github}
       AGENTS_RAW_BASE_URL: ${AGENTS_RAW_BASE_URL:-https://raw.githubusercontent.com/GovChat-NL/GovChat-NL-Agents/main/n8n/workflows}
-      AGENTS_WORKFLOW_FILES: ${AGENTS_WORKFLOW_FILES:-versimpelaar-litellm.json,orchestrator-litellm.json,image-generator-litellm.json,transcriptie-litellm.json,transcriptie-title-litellm.json,govcrawler-run.json,beleidskompas-hoofdagent.json,beleidskompas-step-stap1.json,beleidskompas-step-stap2.json,beleidskompas-step-stap3.json,beleidskompas-step-stap4.json}
+      AGENTS_WORKFLOW_FILES: ${AGENTS_WORKFLOW_FILES:-versimpelaar-litellm.json,orchestrator-litellm.json,image-generator-litellm.json,transcriptie-litellm.json,transcriptie-title-litellm.json,govcrawler-run.json,beleidskompas-hoofdagent.json,beleidskompas-step-stap1.json,beleidskompas-step-stap2.json,beleidskompas-step-stap3.json,beleidskompas-step-stap4.json,openraadsinformatie/openbesluitvorming-document-worker.json,openraadsinformatie/openbesluitvorming-ingest-page-runner.json,openraadsinformatie/openbesluitvorming-search.json}
       AGENTS_LOCAL_WORKFLOWS_DIR: ${AGENTS_LOCAL_WORKFLOWS_DIR:-/workspace/GovChat-NL-Agents/n8n/workflows}
+      BUNDLED_WORKFLOWS_DIR: /workspace/GovChat-NL-LibreChat/n8n/workflows
       AGENTS_BOOTSTRAP_FORCE: ${AGENTS_BOOTSTRAP_FORCE:-false}
     volumes:
       - n8n-data:/home/node/.n8n
       - ../GovChat-NL-Agents:/workspace/GovChat-NL-Agents:ro
+      - ./n8n/workflows:/workspace/GovChat-NL-LibreChat/n8n/workflows:ro
     entrypoint:
       - /bin/sh
       - -lc
@@ -715,6 +732,10 @@ services:
 
         const outDir = '/tmp/agents/workflows';
 
+        function bundledWorkflow(fileName) {
+          return fileName.startsWith('openbesluitvorming/');
+        }
+
         async function download(fileName) {
           const url = base + '/' + fileName;
           const res = await fetch(url, { method: 'GET' });
@@ -775,6 +796,10 @@ services:
           const resolvedDir = resolveLocalSourceDir();
           if (!base && !resolvedDir) throw new Error('AGENTS_RAW_BASE_URL ontbreekt en geen lokale workflows gevonden');
           for (const file of files) {
+            if (bundledWorkflow(file)) {
+              copyLocal(process.env.BUNDLED_WORKFLOWS_DIR, file);
+              continue;
+            }
             try {
               if (!base) throw new Error('Geen AGENTS_RAW_BASE_URL ingesteld');
               await download(file);
@@ -790,7 +815,7 @@ services:
         });
         NODE
 
-        MARKER_FILE=/home/node/.n8n/.govchat-seeded-v5
+        MARKER_FILE=/home/node/.n8n/.govchat-seeded-v6
 
         FORCE="$(printf '%s' "$${AGENTS_BOOTSTRAP_FORCE:-false}" | tr '[:upper:]' '[:lower:]')"
         if [ "$${FORCE}" = "true" ] || [ ! -f "$${MARKER_FILE}" ]; then
@@ -807,6 +832,16 @@ services:
           if [ -f /tmp/agents/workflows/govcrawler-run.json ]; then
             n8n import:workflow --input=/tmp/agents/workflows/govcrawler-run.json
           fi
+          if [ -f /tmp/agents/workflows/openraadsinformatie/openbesluitvorming-document-worker.json ]; then
+            n8n import:workflow --input=/tmp/agents/workflows/openraadsinformatie/openbesluitvorming-document-worker.json
+          fi
+          if [ -f /tmp/agents/workflows/openraadsinformatie/openbesluitvorming-ingest-page-runner.json ]; then
+            n8n import:workflow --input=/tmp/agents/workflows/openraadsinformatie/openbesluitvorming-ingest-page-runner.json
+          fi
+          if [ -f /tmp/agents/workflows/openraadsinformatie/openbesluitvorming-search.json ]; then
+            n8n import:workflow --input=/tmp/agents/workflows/openraadsinformatie/openbesluitvorming-search.json
+          fi
+          # Override the stock orchestrator after its tools are available.
           if [ -f /tmp/agents/workflows/beleidskompas-hoofdagent.json ]; then
             n8n import:workflow --input=/tmp/agents/workflows/beleidskompas-hoofdagent.json
           fi
@@ -836,6 +871,15 @@ services:
           if [ -f /tmp/agents/workflows/govcrawler-run.json ]; then
             n8n export:workflow --id=govchat-govcrawler-run --output=/tmp/verify-govcrawler-run.json
           fi
+          if [ -f /tmp/agents/workflows/openraadsinformatie/openbesluitvorming-document-worker.json ]; then
+            n8n export:workflow --id=govchat-ob-document-worker --output=/tmp/verify-openbesluitvorming-document-worker.json
+          fi
+          if [ -f /tmp/agents/workflows/openraadsinformatie/openbesluitvorming-ingest-page-runner.json ]; then
+            n8n export:workflow --id=govchat-ob-ingest-runner --output=/tmp/verify-openbesluitvorming-ingest-runner.json
+          fi
+          if [ -f /tmp/agents/workflows/openraadsinformatie/openbesluitvorming-search.json ]; then
+            n8n export:workflow --id=govchat-ob-search --output=/tmp/verify-openbesluitvorming-search.json
+          fi
           if [ -f /tmp/agents/workflows/beleidskompas-hoofdagent.json ]; then
             n8n export:workflow --id=govchat-beleidskompas-hoofdagent --output=/tmp/verify-beleidskompas-hoofdagent.json
           fi
@@ -863,6 +907,9 @@ services:
           fi
           if [ -f /tmp/agents/workflows/govcrawler-run.json ]; then
             n8n publish:workflow --id=govchat-govcrawler-run
+          fi
+          if [ -f /tmp/agents/workflows/openraadsinformatie/openbesluitvorming-search.json ]; then
+            n8n publish:workflow --id=govchat-ob-search
           fi
           if [ -f /tmp/agents/workflows/beleidskompas-hoofdagent.json ]; then
             n8n publish:workflow --id=govchat-beleidskompas-hoofdagent
@@ -920,6 +967,27 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+      start_period: 15s
+    networks:
+      - librechat-net
+
+  # ---------------------------------------------------------------------------
+  #  Qdrant - private vector store for workflow-managed document ingestion
+  # ---------------------------------------------------------------------------
+  qdrant:
+    image: qdrant/qdrant:v1.16.2
+    container_name: librechat-qdrant
+    restart: unless-stopped
+    expose:
+      - "6333"
+      - "6334"
+    volumes:
+      - qdrant-storage:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 5 sh -c '</dev/tcp/127.0.0.1/6333'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
       start_period: 15s
     networks:
       - librechat-net
@@ -1098,3 +1166,4 @@ networks:
 volumes:
   n8n-data:
   n8n-postgres-data:
+  qdrant-storage:
