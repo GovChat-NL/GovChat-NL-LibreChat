@@ -1,0 +1,384 @@
+diff --git a/client/src/components/Chat/Messages/Content/Part.tsx b/client/src/components/Chat/Messages/Content/Part.tsx
+index 6df8333..7c5f048 100644
+--- a/client/src/components/Chat/Messages/Content/Part.tsx
++++ b/client/src/components/Chat/Messages/Content/Part.tsx
+@@ -285,6 +285,7 @@ const Part = memo(function Part({
+           args={toolCall.args ?? ''}
+           name={toolCall.name || ''}
+           output={toolCall.output ?? ''}
++          externalExecution={toolCall.execution?.mode === 'external'}
+           initialProgress={toolCall.progress ?? 0.1}
+           isSubmitting={isSubmitting}
+           attachments={attachments}
+diff --git a/client/src/components/Chat/Messages/Content/ToolCall.tsx b/client/src/components/Chat/Messages/Content/ToolCall.tsx
+index 2efde33..7d60cc6 100644
+--- a/client/src/components/Chat/Messages/Content/ToolCall.tsx
++++ b/client/src/components/Chat/Messages/Content/ToolCall.tsx
+@@ -18,6 +18,32 @@ import ProgressText from './ProgressText';
+ import { logger } from '~/utils';
+ import store from '~/store';
+
++const EXTERNAL_EXECUTION_ARGUMENT_KEY = '__librechat_external_execution';
++
++function getExternalExecutionFromArgs(args: string | Record<string, unknown>): boolean {
++  try {
++    const parsed = typeof args === 'string' ? JSON.parse(args) : args;
++    const execution = parsed?.[EXTERNAL_EXECUTION_ARGUMENT_KEY];
++    return execution?.mode === 'external';
++  } catch {
++    return false;
++  }
++}
++
++function removeExternalExecutionFromArgs(args: string | Record<string, unknown>): string {
++  const fallback = typeof args === 'string' ? args : JSON.stringify(args, null, 2);
++  try {
++    const parsed = typeof args === 'string' ? JSON.parse(args) : args;
++    if (parsed == null || typeof parsed !== 'object' || Array.isArray(parsed)) {
++      return fallback;
++    }
++    const { [EXTERNAL_EXECUTION_ARGUMENT_KEY]: _execution, ...toolArgs } = parsed;
++    return JSON.stringify(toolArgs, null, 2);
++  } catch {
++    return fallback;
++  }
++}
++
+ export default function ToolCall({
+   initialProgress = 0.1,
+   isLast = false,
+@@ -28,6 +54,7 @@ export default function ToolCall({
+   attachments,
+   auth,
+   hideAttachments = false,
++  externalExecution = false,
+   onExpand,
+ }: {
+   initialProgress: number;
+@@ -39,10 +66,27 @@ export default function ToolCall({
+   attachments?: TAttachment[];
+   auth?: string;
+   hideAttachments?: boolean;
++  /** Preserve the tool's original name instead of localized verb phrases. */
++  externalExecution?: boolean;
+   onExpand?: () => void;
+ }) {
+   const localize = useLocalize();
+   const autoExpand = useRecoilValue(store.autoExpandTools);
++  /** The marker fallback survives streamed OpenAI tool-call normalization. */
++  const hasExternalExecutionMarker = externalExecution || getExternalExecutionFromArgs(_args);
++  /**
++   * A stream update may sanitize the bridge marker before the final assistant
++   * response flips `isSubmitting` to false. Keep ownership sticky for this
++   * rendered card so a successfully finished external call cannot be shown as
++   * cancelled merely because it has no local tool output.
++   */
++  const [wasExternalExecution, setWasExternalExecution] = useState(hasExternalExecutionMarker);
++  useEffect(() => {
++    if (hasExternalExecutionMarker) {
++      setWasExternalExecution(true);
++    }
++  }, [hasExternalExecutionMarker]);
++  const isExternalExecution = hasExternalExecutionMarker || wasExternalExecution;
+   const hasOutput = (output?.length ?? 0) > 0;
+   const [showInfo, setShowInfo] = useState(() => autoExpand && hasOutput);
+   const { style: expandStyle, ref: expandRef } = useExpandCollapse(showInfo);
+@@ -152,6 +196,7 @@ export default function ToolCall({
+       return '';
+     }
+   }, [_args]) as string | undefined;
++  const displayArgs = isExternalExecution ? removeExternalExecutionFromArgs(args ?? '') : args;
+
+   const hasInfo = useMemo(
+     () => (args?.length ?? 0) > 0 || (output?.length ?? 0) > 0,
+@@ -162,8 +207,13 @@ export default function ToolCall({
+     return parsedAuthUrl?.hostname ?? '';
+   }, [parsedAuthUrl]);
+
+-  const progress = useProgress(initialProgress);
+-  const showCancelled = cancelled || (errorState && !output);
++  /**
++   * The upstream executor completes outside LibreChat. If its stream ends
++   * without a local result event, that is successful completion—not a user
++   * cancellation. The stream marker is retained specifically for this case.
++   */
++  const progress = useProgress(isExternalExecution && !isSubmitting ? 1 : initialProgress);
++  const showCancelled = (!isExternalExecution && cancelled) || (errorState && !output);
+
+   const handleToggleInfo = useCallback(() => {
+     setShowInfo((prev) => {
+@@ -186,6 +236,13 @@ export default function ToolCall({
+   }, [isMCPToolCall, mcpServerName, domain, localize]);
+
+   const getFinishedText = () => {
++    // `cancelled` is derived from the generic local-tool contract. An
++    // externally owned call intentionally has no local output/progress event,
++    // so this check must come first to prevent its terminal state being
++    // mislabeled as cancelled.
++    if (isExternalExecution) {
++      return function_name;
++    }
+     if (cancelled) {
+       return localize('com_ui_cancelled');
+     }
+@@ -219,9 +276,11 @@ export default function ToolCall({
+           progress={progress}
+           onClick={handleToggleInfo}
+           inProgressText={
+-            function_name
+-              ? localize('com_assistants_running_var', { 0: function_name })
+-              : localize('com_assistants_running_action')
++            isExternalExecution
++              ? function_name
++              : function_name
++                ? localize('com_assistants_running_var', { 0: function_name })
++                : localize('com_assistants_running_action')
+           }
+           authText={
+             !showCancelled && authDomain.length > 0 ? localize('com_ui_requires_auth') : undefined
+@@ -245,7 +304,7 @@ export default function ToolCall({
+         <div className="overflow-hidden" ref={expandRef}>
+           {hasInfo && (
+             <div className="my-2 overflow-hidden rounded-lg border border-border-light bg-surface-secondary">
+-              <ToolCallInfo input={args ?? ''} output={output} attachments={attachments} />
++              <ToolCallInfo input={displayArgs ?? ''} output={output} attachments={attachments} />
+             </div>
+           )}
+         </div>
+diff --git a/client/src/components/Chat/Messages/Content/__tests__/ToolCall.test.tsx b/client/src/components/Chat/Messages/Content/__tests__/ToolCall.test.tsx
+index 8162239..0be6aba 100644
+--- a/client/src/components/Chat/Messages/Content/__tests__/ToolCall.test.tsx
++++ b/client/src/components/Chat/Messages/Content/__tests__/ToolCall.test.tsx
+@@ -115,6 +115,92 @@ describe('ToolCall', () => {
+     jest.clearAllMocks();
+   });
+
++  describe('external execution presentation', () => {
++    it('keeps the original name visible while an external tool is running', () => {
++      renderWithRecoil(
++        <ToolCall
++          {...mockProps}
++          name="tool_name"
++          output=""
++          initialProgress={0.1}
++          isSubmitting={true}
++          externalExecution={true}
++        />,
++      );
++
++      expect(screen.getByTestId('progress-text')).toHaveTextContent('tool_name');
++      expect(screen.getByTestId('progress-text')).not.toHaveTextContent('Running tool_name');
++    });
++
++    it('keeps the original name visible when an external tool completes', () => {
++      renderWithRecoil(<ToolCall {...mockProps} name="tool_name" externalExecution={true} />);
++
++      expect(screen.getByTestId('progress-text')).toHaveTextContent('tool_name');
++      expect(screen.getByTestId('progress-text')).not.toHaveTextContent('Completed tool_name');
++    });
++
++    it('never renders an external tool as cancelled after submission completes', () => {
++      renderWithRecoil(
++        <ToolCall
++          {...mockProps}
++          name="tool_name"
++          output=""
++          initialProgress={0.1}
++          isSubmitting={false}
++          externalExecution={true}
++        />,
++      );
++
++      expect(screen.getByTestId('progress-text')).toHaveTextContent('tool_name');
++      expect(screen.getByTestId('progress-text')).not.toHaveTextContent('Cancelled');
++    });
++
++    it('retains external ownership when the finalized stream update omits the marker', () => {
++      const rendered = renderWithRecoil(
++        <ToolCall
++          {...mockProps}
++          name="tool_name"
++          output=""
++          initialProgress={0.1}
++          isSubmitting={true}
++          args='{"__librechat_external_execution":{"mode":"external","provider":"workflow-engine"}}'
++        />,
++      );
++
++      rendered.rerender(
++        <RecoilRoot>
++          <ToolCall
++            {...mockProps}
++            name="tool_name"
++            output=""
++            initialProgress={0.1}
++            isSubmitting={false}
++            args='{"input":"finalized"}'
++          />
++        </RecoilRoot>,
++      );
++
++      expect(screen.getByTestId('progress-text')).toHaveTextContent('tool_name');
++      expect(screen.getByTestId('progress-text')).not.toHaveTextContent('Cancelled');
++    });
++
++    it('recognizes the bridge marker before stream ownership metadata arrives', () => {
++      renderWithRecoil(
++        <ToolCall
++          {...mockProps}
++          name="tool_name"
++          output=""
++          initialProgress={0.1}
++          isSubmitting={true}
++          args='{"__librechat_external_execution":{"mode":"external","provider":"workflow-engine"}}'
++        />,
++      );
++
++      expect(screen.getByTestId('progress-text')).toHaveTextContent('tool_name');
++      expect(screen.getByTestId('progress-text')).not.toHaveTextContent('Running tool_name');
++    });
++  });
++
+   describe('attachments prop passing', () => {
+     it('should pass attachments to ToolCallInfo when provided', () => {
+       const attachments = [
+diff --git a/client/src/hooks/SSE/useStepHandler.ts b/client/src/hooks/SSE/useStepHandler.ts
+index e9ef6e3..0b14cb6 100644
+--- a/client/src/hooks/SSE/useStepHandler.ts
++++ b/client/src/hooks/SSE/useStepHandler.ts
+@@ -432,6 +432,7 @@ export default function useStepHandler({
+         name,
+         args,
+         type: ToolCallTypes.TOOL_CALL,
++        execution: contentPart.tool_call.execution ?? existingToolCall?.execution,
+         auth: contentPart.tool_call.auth,
+         expires_at: contentPart.tool_call.expires_at,
+       };
+diff --git a/packages/api/src/agents/handlers.ts b/packages/api/src/agents/handlers.ts
+index 8605ef4..50c8e35 100644
+--- a/packages/api/src/agents/handlers.ts
++++ b/packages/api/src/agents/handlers.ts
+@@ -3173,7 +3173,13 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
+       try {
+         await runOutsideTracing(async () => {
+           try {
+-            const toolNames = [...new Set(toolCalls.map((tc: ToolCallRequest) => tc.name))];
++            const externalToolCalls = toolCalls.filter(
++              (tc: ToolCallRequest) => tc.execution?.mode === 'external',
++            );
++            const localToolCalls = toolCalls.filter(
++              (tc: ToolCallRequest) => tc.execution?.mode !== 'external',
++            );
++            const toolNames = [...new Set(localToolCalls.map((tc: ToolCallRequest) => tc.name))];
+             const { loadedTools, configurable: toolConfigurable } = await loadTools(
+               toolNames,
+               agentId,
+@@ -3188,8 +3194,18 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
+             const authoringQueues = new Map<string, Promise<void>>();
+             const sandboxAuthoringContexts = new Map<string, SandboxSessionContext>();
+
+-            const results: ToolExecuteResult[] = await Promise.all(
+-              toolCalls.map(async (tc: ToolCallRequest) => {
++            const externalResults = externalToolCalls.map((tc: ToolCallRequest) =>
++              reportResult({
++                toolCallId: tc.id,
++                status: 'success' as const,
++                // The trusted upstream runtime owns the result. Mark the
++                // native lifecycle complete without rendering its transport
++                // provider as user-visible tool output.
++                content: '',
++              }),
++            );
++            const localResults: ToolExecuteResult[] = await Promise.all(
++              localToolCalls.map(async (tc: ToolCallRequest) => {
+                 const execute = async (
+                   sandboxContext?: SandboxSessionContext,
+                 ): Promise<ToolExecuteResult> => {
+@@ -3498,7 +3514,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
+               }),
+             );
+
+-            resolve(results);
++            resolve([...externalResults, ...localResults]);
+           } catch (error) {
+             logger.error('[ON_TOOL_EXECUTE] Fatal error:', error);
+             reject(error as Error);
+diff --git a/packages/api/src/endpoints/custom/initialize.ts b/packages/api/src/endpoints/custom/initialize.ts
+index e25b5e1..f8bb917 100644
+--- a/packages/api/src/endpoints/custom/initialize.ts
++++ b/packages/api/src/endpoints/custom/initialize.ts
+@@ -341,6 +341,8 @@ export async function initializeCustom({
+     if (options != null) {
+       options.useLegacyContent = true;
+       options.endpointTokenConfig = endpointTokenConfig;
++      (options.llmConfig as Record<string, unknown>).externalToolExecution =
++        endpointConfig.externalToolExecution;
+     }
+   }
+
+diff --git a/packages/api/src/endpoints/openai/llm.ts b/packages/api/src/endpoints/openai/llm.ts
+index ddbadc0..2dea1ea 100644
+--- a/packages/api/src/endpoints/openai/llm.ts
++++ b/packages/api/src/endpoints/openai/llm.ts
+@@ -71,6 +71,7 @@ export const knownOpenAIParams: Set<string> = new Set([
+   'verbose',
+   'streaming',
+   'streamUsage',
++  'externalToolExecution',
+   'disableStreaming',
+ ]);
+
+diff --git a/packages/data-provider/src/config.ts b/packages/data-provider/src/config.ts
+index c0034d8..8171737 100644
+--- a/packages/data-provider/src/config.ts
++++ b/packages/data-provider/src/config.ts
+@@ -825,6 +825,13 @@ export const paramDefinitionSchema = z.object({
+   selectPlaceholderCode: z.boolean().optional(),
+ });
+
++export const externalToolExecutionSchema = z
++  .object({
++    enabled: z.boolean(),
++    acceptedProviders: z.array(z.string().min(1)).min(1).optional(),
++  })
++  .strict();
++
+ export const endpointSchema = baseEndpointSchema.merge(
+   z.object({
+     name: z.string().refine((value) => !eModelEndpointSchema.safeParse(value).success, {
+@@ -850,6 +857,8 @@ export const endpointSchema = baseEndpointSchema.merge(
+      */
+     provider: z.literal(EModelEndpoint.anthropic).optional(),
+     headers: z.record(z.string()).optional(),
++    /** Enables trusted, externally executed tool-call metadata for this endpoint only. */
++    externalToolExecution: externalToolExecutionSchema.optional(),
+     addParams: addParamsSchema.optional(),
+     dropParams: z.array(z.string()).optional(),
+     customParams: z
+diff --git a/packages/data-provider/src/types/agents.ts b/packages/data-provider/src/types/agents.ts
+index 0dc96fb..f3f38a1 100644
+--- a/packages/data-provider/src/types/agents.ts
++++ b/packages/data-provider/src/types/agents.ts
+@@ -66,6 +66,13 @@ export namespace Agents {
+   /**
+    * A call to a tool.
+    */
++  export type ToolExecution = {
++    /** Execution owner. Omitted values use LibreChat's local executor. */
++    mode: 'local' | 'external';
++    /** Optional upstream executor identifier; never required for presentation. */
++    provider?: string;
++  };
++
+   export type ToolCall = {
+     /** Type ("tool_call") according to Assistants Tool Call Structure */
+     type: ToolCallTypes.TOOL_CALL;
+@@ -76,6 +83,8 @@ export namespace Agents {
+     // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     args?: string | Record<string, any>;
+
++    /** Execution ownership metadata for an externally executed call. */
++    execution?: ToolExecution;
+     /** If provided, an identifier associated with the tool call */
+     id?: string;
+     /** If provided, the output of the tool call */

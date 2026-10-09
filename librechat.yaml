@@ -19,6 +19,12 @@ endpoints:
         default:
           - govchat-orchestrator
         fetch: true
+      # The bridge owns execution. LibreChat only renders the native lifecycle
+      # for explicitly marked, allowlisted external tool calls.
+      externalToolExecution:
+        enabled: true
+        acceptedProviders:
+          - workflow-engine
       headers:
         X-Chat-Id: "{{LIBRECHAT_BODY_CONVERSATIONID}}"
         X-User-Id: "{{LIBRECHAT_USER_ID}}"

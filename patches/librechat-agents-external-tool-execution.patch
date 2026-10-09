@@ -1,0 +1,465 @@
+diff --git a/src/graphs/Graph.ts b/src/graphs/Graph.ts
+index 32df32c..cf6b18c 100644
+--- a/src/graphs/Graph.ts
++++ b/src/graphs/Graph.ts
+@@ -2194,7 +2194,30 @@ export class StandardGraph extends Graph<t.BaseGraphState, t.GraphNode> {
+         if (dispatchedReasoning) {
+           markPostReasoningContent(agentContext);
+         }
+-        if (textMessageContent != null && !hasStreamedTextDeltaStep) {
++        const hasExternalToolCall = (toolCalls as t.CustomToolCall[]).some((toolCall) => {
++          if (toolCall.execution?.mode === 'external') {
++            return true;
++          }
++          const args = toolCall.args;
++          if (args == null || typeof args !== 'object' || Array.isArray(args)) {
++            return false;
++          }
++          return (
++            (args as Record<string, unknown>).__librechat_external_execution as
++              | { mode?: unknown }
++              | undefined
++          )?.mode === 'external';
++        });
++        /**
++         * An external executor can return the tool call and its final answer
++         * in one OpenAI-compatible streamed response. Some SDK callback paths
++         * mark a text delta as handled before it reaches the native message
++         * stream, so the ordinary `!hasStreamedTextDeltaStep` gate would drop
++         * the authoritative final content. Re-dispatch final content for this
++         * narrow externally owned case; the agent graph terminates afterwards,
++         * so it cannot initiate a local follow-up tool round.
++         */
++        if (textMessageContent != null && (!hasStreamedTextDeltaStep || hasExternalToolCall)) {
+           const stepKey = this.getStepKey(metadata);
+           const dispatchedText = await dispatchTextMessageContent({
+             graph: this,
+@@ -2429,6 +2452,23 @@ export class StandardGraph extends Graph<t.BaseGraphState, t.GraphNode> {
+       if (state.summarizationRequest != null) {
+         return summarizeNode;
+       }
++      /**
++       * An externally owned tool has already executed in the upstream runtime.
++       * Its normal OpenAI-compatible tool call is retained for native UI and
++       * history, but must not enter the local ToolNode or prompt the model for
++       * redundant follow-up calls. The stream handler has already emitted the
++       * corresponding completed run-step lifecycle record.
++       */
++      const latestMessage = state.messages[state.messages.length - 1] as
++        | { tool_calls?: t.CustomToolCall[] }
++        | undefined;
++      const latestToolCalls = latestMessage?.tool_calls;
++      const hasOnlyExternalToolCalls =
++        (latestToolCalls?.length ?? 0) > 0 &&
++        latestToolCalls?.every((toolCall: t.CustomToolCall) => toolCall.execution?.mode === 'external');
++      if (hasOnlyExternalToolCalls) {
++        return END;
++      }
+       return toolsCondition(
+         state as t.BaseGraphState,
+         toolNode,
+diff --git a/src/llm/openai/index.ts b/src/llm/openai/index.ts
+index 8f1662f..5003800 100644
+--- a/src/llm/openai/index.ts
++++ b/src/llm/openai/index.ts
+@@ -34,6 +34,7 @@ import type { ChatGeneration, ChatResult } from '@langchain/core/outputs';
+ import type { ChatXAIInput } from '@langchain/xai';
+ import type * as t from '@langchain/openai';
+ import type { HeaderValue, HeadersLike } from './types';
++import type { ToolExecution } from '@/types/tools';
+ import {
+   STREAMED_TOOL_CALL_ADAPTER_METADATA_KEY,
+   OPENAI_CHAT_SEQUENTIAL_STREAMED_TOOL_CALL_ADAPTER,
+@@ -95,8 +96,14 @@ type OpenAICompletionParam =
+ type OpenAIClientConfig = NonNullable<
+   ConstructorParameters<typeof OpenAIClient>[0]
+ >;
++type ExternalToolExecutionConfig = {
++  enabled: boolean;
++  acceptedProviders?: string[];
++};
++
+ type LibreChatOpenAIFields = t.ChatOpenAIFields & {
+   _lc_stream_delay?: number;
++  externalToolExecution?: ExternalToolExecutionConfig;
+   includeReasoningContent?: boolean;
+   includeReasoningDetails?: boolean;
+   convertReasoningDetailsToContent?: boolean;
+@@ -113,6 +120,13 @@ type OpenAIDeltaWithLibreChatFields = Record<string, unknown> & {
+   reasoning_details?: unknown;
+   provider_specific_fields?: unknown;
+ };
++
++type OpenAIToolCallWithExecution = {
++  index?: number;
++  id?: string;
++  execution?: ToolExecution;
++  function?: { name?: string; arguments?: string };
++};
+ type OpenAIClientOwner = {
+   client?: OpenAIClient;
+   clientConfig: OpenAIClientConfig;
+@@ -332,7 +346,8 @@ async function completionWithFilteredOpenAIStream(
+
+ function attachLibreChatDeltaFields(
+   chunk: BaseMessageChunk,
+-  delta: Record<string, unknown>
++  delta: Record<string, unknown>,
++  externalToolExecution?: ExternalToolExecutionConfig,
+ ): BaseMessageChunk {
+   if (!AIMessageChunk.isInstance(chunk)) {
+     return chunk;
+@@ -353,6 +368,27 @@ function attachLibreChatDeltaFields(
+     chunk.additional_kwargs.provider_specific_fields =
+       libreChatDelta.provider_specific_fields;
+   }
++  const toolCalls = libreChatDelta.tool_calls as OpenAIToolCallWithExecution[] | undefined;
++  const toolCallChunks = (chunk as BaseMessageChunk & {
++    tool_call_chunks?: Array<Record<string, unknown>>;
++  }).tool_call_chunks;
++  if (externalToolExecution?.enabled === true && Array.isArray(toolCalls) && Array.isArray(toolCallChunks)) {
++    for (const toolCall of toolCalls) {
++      if (
++        toolCall.execution?.mode !== 'external' ||
++        (externalToolExecution.acceptedProviders != null &&
++          !externalToolExecution.acceptedProviders.includes(toolCall.execution.provider ?? ''))
++      ) {
++        continue;
++      }
++      const index = toolCall.index ?? 0;
++      for (const toolCallChunk of toolCallChunks) {
++        if (toolCallChunk.index === index) {
++          Object.assign(toolCallChunk, { execution: toolCall.execution });
++        }
++      }
++    }
++  }
+   return chunk;
+ }
+
+@@ -738,12 +774,14 @@ function isFirstPartyAzureEndpoint(args: {
+ }
+
+ class LibreChatOpenAICompletions extends OriginalChatOpenAICompletions {
++  private externalToolExecution?: ExternalToolExecutionConfig;
+   private includeReasoningContent?: boolean;
+   private includeReasoningDetails?: boolean;
+   private convertReasoningDetailsToContent?: boolean;
+
+   constructor(fields?: LibreChatOpenAIFields) {
+     super(fields);
++    this.externalToolExecution = fields?.externalToolExecution;
+     this.includeReasoningContent = fields?.includeReasoningContent;
+     this.includeReasoningDetails = fields?.includeReasoningDetails;
+     this.convertReasoningDetailsToContent =
+@@ -794,7 +832,8 @@ class LibreChatOpenAICompletions extends OriginalChatOpenAICompletions {
+         rawResponse,
+         defaultRole
+       ),
+-      delta
++      delta,
++      this.externalToolExecution,
+     );
+     if (isOfficialOpenAIBaseURL(this.clientConfig.baseURL)) {
+       return stampSequentialStreamedToolCallAdapter(message);
+diff --git a/src/stream.ts b/src/stream.ts
+index 6913f43..10ff660 100644
+--- a/src/stream.ts
++++ b/src/stream.ts
+@@ -1555,13 +1555,41 @@ hasToolCallChunks: ${hasToolCallChunks}
+       return;
+     }
+
+-    /* Note: tool call chunks may have non-empty content that matches the current tool chunk generation */
++    /*
++     * Text can arrive after a tool call in the same OpenAI-compatible stream.
++     * This is normal for an externally owned executor, and the first text
++     * fragment may precede the final normalized tool-call record that carries
++     * external ownership metadata. Therefore do not predicate the decision on
++     * metadata that may not exist yet. Only suppress content which is exactly
++     * a streamed tool-argument fragment; all other text begins a new message
++     * step and is preserved in full.
++     */
++    const contentMatchesToolCallArgs =
++      hasToolCallChunks &&
++      (chunk.tool_call_chunks?.some((tc) => tc.args === content) ?? false);
+     if (typeof content === 'string' && runStep.type === StepTypes.TOOL_CALLS) {
++      if (contentMatchesToolCallArgs) {
++        return;
++      }
++      stepId = await dispatchMessageCreationStep({ graph, stepKey, metadata });
++      runStep = graph.getRunStep(stepId);
++      if (!runStep) {
++        return;
++      }
++      await graph.dispatchMessageDelta(
++        stepId,
++        {
++          content: [
++            {
++              type: ContentTypes.TEXT,
++              text: content,
++            },
++          ],
++        },
++        metadata
++      );
+       return;
+-    } else if (
+-      hasToolCallChunks &&
+-      (chunk.tool_call_chunks?.some((tc) => tc.args === content) ?? false)
+-    ) {
++    } else if (contentMatchesToolCallArgs) {
+       return;
+     } else if (typeof content === 'string') {
+       if (agentContext.currentTokenType === ContentTypes.TEXT) {
+@@ -2027,6 +2055,7 @@ export function createContentAggregator(): t.ContentAggregatorResult {
+               args: toolCall.args,
+               name: toolCall.name,
+               id: toolCallId,
++              execution: (toolCall as t.CustomToolCall).execution,
+             },
+           };
+
+@@ -2087,6 +2116,7 @@ export function createContentAggregator(): t.ContentAggregatorResult {
+               args: toolCallDelta.args ?? '',
+               name: toolCallDelta.name,
+               id: toolCallId,
++              execution: (toolCallDelta as t.CustomToolCall).execution,
+               auth: runStepDelta.delta.auth,
+               expires_at: runStepDelta.delta.expires_at,
+             },
+diff --git a/src/tools/ToolNode.ts b/src/tools/ToolNode.ts
+index 3881f64..645576c 100644
+--- a/src/tools/ToolNode.ts
++++ b/src/tools/ToolNode.ts
+@@ -107,6 +107,29 @@ type RunToolBatchContext = {
+ };
+
+ const TOOL_NODE_RUN_NAME = 'tool_batch';
++const EXTERNAL_EXECUTION_ARGUMENT_KEY = '__librechat_external_execution';
++
++function extractExternalToolExecution(args: Record<string, unknown>): t.ToolExecution | undefined {
++  const execution = args[EXTERNAL_EXECUTION_ARGUMENT_KEY];
++  if (
++    execution == null ||
++    typeof execution !== 'object' ||
++    Array.isArray(execution) ||
++    (execution as { mode?: unknown }).mode !== 'external'
++  ) {
++    return undefined;
++  }
++  const provider = (execution as { provider?: unknown }).provider;
++  return {
++    mode: 'external',
++    ...(typeof provider === 'string' && provider.length > 0 ? { provider } : {}),
++  };
++}
++
++function removeExternalExecutionArgument(args: Record<string, unknown>): Record<string, unknown> {
++  const { [EXTERNAL_EXECUTION_ARGUMENT_KEY]: _execution, ...toolArgs } = args;
++  return toolArgs;
++}
+
+ /**
+  * Per-batch context for `dispatchToolEvents` / `executeViaEvent`.
+@@ -800,6 +823,26 @@ export class ToolNode<T = any> extends RunnableCallable<T, T> {
+     config: RunnableConfig,
+     batchContext: RunToolBatchContext = {}
+   ): Promise<BaseMessage | Command> {
++    /**
++     * Direct execution bypasses `dispatchToolEvents`, so it must independently
++     * consume the trusted bridge marker before attempting a local lookup. The
++     * event-driven path does the same in `dispatchToolEvents` below. Keeping
++     * both gates prevents the user-visible card from becoming a local
++     * "Tool not found" failure when the graph selects the direct path.
++     */
++    const callArgs = call.args;
++    const markerExecution =
++      callArgs != null && typeof callArgs === 'object' && !Array.isArray(callArgs)
++        ? extractExternalToolExecution(callArgs as Record<string, unknown>)
++        : undefined;
++    const execution = (call as t.CustomToolCall).execution ?? markerExecution;
++    if (execution) {
++      (call as t.CustomToolCall).execution = execution;
++      if (markerExecution) {
++        call.args = removeExternalExecutionArgument(callArgs as Record<string, unknown>);
++      }
++    }
++
+     const {
+       batchIndex,
+       turn,
+@@ -857,6 +900,16 @@ export class ToolNode<T = any> extends RunnableCallable<T, T> {
+     const runId =
+       batchScopeId ?? (config.configurable?.run_id as string | undefined);
+     try {
++      if (execution?.mode === 'external') {
++        return new ToolMessage({
++          // The upstream executor owns completion. Keep the native tool-card
++          // lifecycle without exposing transport or provider implementation
++          // details as user-visible tool output.
++          content: '',
++          name: call.name,
++          tool_call_id: call.id!,
++        });
++      }
+       if (tool === undefined) {
+         throw new Error(this.getUnknownToolErrorMessage(call.name));
+       }
+@@ -1835,6 +1888,7 @@ export class ToolNode<T = any> extends RunnableCallable<T, T> {
+         id: toolCallId,
+         output: contentString,
+         progress: 1,
++        execution: (call as t.CustomToolCall).execution,
+       };
+
+       await safeDispatchCustomEvent(
+@@ -1894,7 +1948,13 @@ export class ToolNode<T = any> extends RunnableCallable<T, T> {
+
+     const preToolCalls = toolCalls.map((call, i) => {
+       const originalArgs = call.args as Record<string, unknown>;
+-      let resolvedArgs = originalArgs;
++      const execution = (call as t.CustomToolCall).execution ?? extractExternalToolExecution(originalArgs);
++      const sanitizedArgs = execution ? removeExternalExecutionArgument(originalArgs) : originalArgs;
++      if (execution) {
++        (call as t.CustomToolCall).execution = execution;
++        call.args = sanitizedArgs;
++      }
++      let resolvedArgs = sanitizedArgs;
+       /**
+        * When the caller provided a pre-resolved map (the mixed
+        * direct+event path snapshots event args synchronously before
+@@ -1912,7 +1972,7 @@ export class ToolNode<T = any> extends RunnableCallable<T, T> {
+       } else if (registry != null) {
+         const { resolved, unresolved } = registry.resolve(
+           registryRunId,
+-          originalArgs
++          sanitizedArgs
+         );
+         resolvedArgs = resolved as Record<string, unknown>;
+         if (unresolved.length > 0 && call.id != null) {
+@@ -2441,6 +2501,7 @@ export class ToolNode<T = any> extends RunnableCallable<T, T> {
+             name: entry.call.name,
+             args: entry.args,
+             stepId: entry.stepId,
++            execution: (entry.call as t.CustomToolCall).execution,
+             codeSessionContext,
+           };
+         }),
+diff --git a/src/tools/handlers.ts b/src/tools/handlers.ts
+index 9e71a7b..58fe4f0 100644
+--- a/src/tools/handlers.ts
++++ b/src/tools/handlers.ts
+@@ -3,6 +3,7 @@
+ import { nanoid } from 'nanoid';
+ import { ToolMessage } from '@langchain/core/messages';
+ import type { ToolCall, ToolCallChunk } from '@langchain/core/messages/tool';
++import type { ToolExecution } from '@/types/tools';
+ import type { AnthropicWebSearchResultBlockParam } from '@/llm/anthropic/types';
+ import type { Graph, MultiAgentGraph, StandardGraph } from '@/graphs';
+ import type { AgentContext } from '@/agents/AgentContext';
+@@ -21,6 +22,36 @@ import {
+ import { formatResultsForLLM } from '@/tools/search/format';
+ import { getMessageId } from '@/messages';
+
++const EXTERNAL_EXECUTION_ARGUMENT_KEY = '__librechat_external_execution';
++
++function getExternalToolExecution(args: unknown): ToolExecution | undefined {
++  if (args == null || typeof args !== 'object' || Array.isArray(args)) {
++    return undefined;
++  }
++  const execution = (args as Record<string, unknown>)[EXTERNAL_EXECUTION_ARGUMENT_KEY];
++  if (
++    execution == null ||
++    typeof execution !== 'object' ||
++    Array.isArray(execution) ||
++    (execution as { mode?: unknown }).mode !== 'external'
++  ) {
++    return undefined;
++  }
++  const provider = (execution as { provider?: unknown }).provider;
++  return {
++    mode: 'external',
++    ...(typeof provider === 'string' && provider.length > 0 ? { provider } : {}),
++  };
++}
++
++function sanitizeExternalToolArgs(args: unknown): unknown {
++  if (args == null || typeof args !== 'object' || Array.isArray(args)) {
++    return args;
++  }
++  const { [EXTERNAL_EXECUTION_ARGUMENT_KEY]: _execution, ...toolArgs } = args as Record<string, unknown>;
++  return toolArgs;
++}
++
+ export async function handleToolCallChunks({
+   graph,
+   stepKey,
+@@ -156,6 +187,11 @@ export const handleToolCalls = async (
+   let reusedChunkStepId: string | undefined;
+
+   for (const tool_call of toolCalls) {
++    const execution = getExternalToolExecution(tool_call.args);
++    if (execution) {
++      (tool_call as t.CustomToolCall).execution = execution;
++      tool_call.args = sanitizeExternalToolArgs(tool_call.args) as ToolCall['args'];
++    }
+     const toolCallId = tool_call.id ?? `toolu_${nanoid()}`;
+     tool_call.id = toolCallId;
+     if (!toolCallId || graph.toolCallStepIds.has(toolCallId)) {
+diff --git a/src/types/stream.ts b/src/types/stream.ts
+index c7f5482..d3ae32a 100644
+--- a/src/types/stream.ts
++++ b/src/types/stream.ts
+@@ -11,7 +11,7 @@ import type { Command } from '@langchain/langgraph';
+ import type OpenAITypes from 'openai';
+ import type { AnthropicContentBlock } from '@/llm/anthropic/types';
+ import type { SummarizeCompleteEvent } from '@/types/summarize';
+-import type { ToolEndEvent } from '@/types/tools';
++import type { ToolEndEvent, ToolExecution } from '@/types/tools';
+ import { StepTypes, ContentTypes, GraphEvents } from '@/common/enum';
+
+ export type HandleLLMEnd = (
+@@ -138,6 +138,7 @@ export type ToolEndCallback = (
+
+ export type ProcessedToolCall = {
+   name: string;
++  execution?: ToolExecution;
+   args: string | Record<string, unknown>;
+   id: string;
+   output: string;
+diff --git a/src/types/tools.ts b/src/types/tools.ts
+index e7d34c8..bf8de00 100644
+--- a/src/types/tools.ts
++++ b/src/types/tools.ts
+@@ -16,6 +16,7 @@ export type CustomToolCall = {
+   id?: string;
+   type?: 'tool_call';
+   output?: string;
++  execution?: ToolExecution;
+ };
+
+ export type GenericTool = (StructuredToolInterface | RunnableToolLike) & {
+@@ -379,6 +380,12 @@ export type LCTool = {
+   toolType?: 'builtin' | 'mcp' | 'action';
+ };
+
++/** Execution ownership for a tool call. Omitted values use the local executor. */
++export type ToolExecution = {
++  mode: 'local' | 'external';
++  provider?: string;
++};
++
+ /** Single tool call within a batch request for event-driven execution */
+ export type ToolCallRequest = {
+   /** Tool call ID from the LLM */
+@@ -391,6 +398,8 @@ export type ToolCallRequest = {
+   stepId?: string;
+   /** Usage turn count for this tool */
+   turn?: number;
++  /** Execution ownership resolved by the trusted endpoint adapter. */
++  execution?: ToolExecution;
+   /** Code execution session context for session continuity in event-driven mode */
+   codeSessionContext?: {
+     /** Execution session — see `CodeSessionContext.session_id`. */

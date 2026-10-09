@@ -1,0 +1,40 @@
+# A small, reproducible LibreChat extension for the generic externally-executed
+# tool-call contract. Runtime always remains the official LibreChat image.
+# Patches are maintained separately and applied to pinned upstream source tags.
+FROM node:24.16.0-bookworm-slim AS build
+
+ARG LIBRECHAT_REF=v0.8.7
+ARG AGENTS_REF=v3.2.46
+ARG NPM_CI_TIMEOUT_SECONDS=1500
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+RUN git clone --depth 1 --branch "${LIBRECHAT_REF}" https://github.com/danny-avila/LibreChat.git librechat \
+    && git clone --depth 1 --branch "${AGENTS_REF}" https://github.com/danny-avila/agents.git agents
+
+COPY patches/librechat-external-tool-execution.patch /tmp/librechat.patch
+COPY patches/librechat-agents-external-tool-execution.patch /tmp/agents.patch
+# Fix only trailing whitespace in historical patch additions while applying;
+# this keeps the source patches readable and makes the generated build stable.
+RUN git -C /src/librechat apply --check --whitespace=fix /tmp/librechat.patch \
+    && git -C /src/librechat apply --whitespace=fix /tmp/librechat.patch \
+    && git -C /src/agents apply --check --whitespace=fix /tmp/agents.patch \
+    && git -C /src/agents apply --whitespace=fix /tmp/agents.patch
+
+WORKDIR /src/librechat
+RUN timeout "${NPM_CI_TIMEOUT_SECONDS}" npm ci --no-audit
+RUN npm run build:data-provider && npm run build:api && npm run build:client-package && npm run build:client
+
+WORKDIR /src/agents
+RUN timeout "${NPM_CI_TIMEOUT_SECONDS}" npm ci --ignore-scripts --no-audit
+RUN npm run build
+
+FROM registry.librechat.ai/danny-avila/librechat:v0.8.7
+
+COPY --from=build /src/librechat/packages/data-provider/dist /app/packages/data-provider/dist
+COPY --from=build /src/librechat/packages/api/dist /app/packages/api/dist
+COPY --from=build /src/librechat/client/dist /app/client/dist
+COPY --from=build /src/agents/dist /app/node_modules/@librechat/agents/dist

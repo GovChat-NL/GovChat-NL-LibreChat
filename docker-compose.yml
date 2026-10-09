@@ -10,7 +10,12 @@ services:
   #    Standaard configuratiebestand staat in deze repo: ./librechat.yaml
   # ---------------------------------------------------------------------------
   librechat:
-    image: registry.librechat.ai/danny-avila/librechat:v0.8.7
+    # Official LibreChat runtime image plus a small, reproducible extension
+    # built from pinned upstream sources and patch files in ./patches.
+    build:
+      context: .
+      dockerfile: Dockerfile.librechat-external-tools
+    image: govchat-librechat:external-tools-v0.8.7
     container_name: librechat
     restart: unless-stopped
     expose:
@@ -892,7 +897,12 @@ services:
   #  n8n OpenAI Bridge - OpenAI-compatibele laag tussen LibreChat en n8n
   # ---------------------------------------------------------------------------
   n8n-openai-bridge:
-    image: ghcr.io/sveneisenschmidt/n8n-openai-bridge:pr-72
+    # Build the GovChat-owned bridge source; upstream image remains the base for
+    # normal releases while this branch provides live external-tool lifecycle events.
+    build:
+      context: ./n8n-openai-bridge-src
+      dockerfile: docker/Dockerfile.build
+    image: govchat-n8n-openai-bridge:live-tool-visibility
     container_name: n8n-openai-bridge
     restart: unless-stopped
     depends_on:
@@ -904,6 +914,13 @@ services:
       PORT: "3333"
       BEARER_TOKEN: ${N8N_OPENAI_BRIDGE_BEARER_TOKEN}
       N8N_WEBHOOK_BEARER_TOKEN: ${N8N_WEBHOOK_TOKEN}
+      # n8n uses this endpoint as its OpenAI credential when it needs to report
+      # tool calls live to the active LibreChat response stream.
+      OPENAI_TOOL_PROXY_BASE_URL: http://litellm:4000
+      OPENAI_TOOL_PROXY_API_KEY: ${LITELLM_API_KEY}
+      OPENAI_TOOL_PROXY_TIMEOUT_MS: "120000"
+      ACTIVE_STREAM_TTL_MS: "600000"
+      ACTIVE_STREAM_SWEEP_INTERVAL_MS: "60000"
       MODEL_LOADER_TYPE: file
       MODELS_CONFIG_FILE: /app/models.json
       LOG_REQUESTS: ${N8N_OPENAI_BRIDGE_LOG_REQUESTS:-false}
