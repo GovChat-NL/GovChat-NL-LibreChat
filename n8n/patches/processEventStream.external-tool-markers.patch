@@ -1,0 +1,20 @@
+--- a/processEventStream.js
++++ b/processEventStream.js
+@@ -34,6 +34,17 @@
+                     const output = chatModelData.output;
+                     if (output?.tool_calls && output.tool_calls.length > 0) {
+                         for (const toolCall of output.tool_calls) {
++                            const id = toolCall.id || `call_${Date.now()}_${toolCalls.length}`;
++                            const toolPayload = JSON.stringify({
++                                version: 1,
++                                id,
++                                name: toolCall.name,
++                                arguments: toolCall.args || {},
++                            });
++                            // The bridge removes this trusted, n8n-generated marker from
++                            // assistant content and translates it into a native LibreChat
++                            // external-tool lifecycle event for the active response stream.
++                            ctx.sendChunk('item', itemIndex, `<!--GOVCHAT_EXTERNAL_TOOL:${toolPayload}-->`);
+                             toolCalls.push({
+                                 tool: toolCall.name,
+                                 toolInput: toolCall.args,

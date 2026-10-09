@@ -418,7 +418,15 @@ services:
   #  - Alleen webhook route wordt via nginx geproxied
   # ---------------------------------------------------------------------------
   n8n:
-    image: docker.n8n.io/n8nio/n8n:${N8N_VERSION:-2.25.7}
+    # Official pinned n8n base plus the small external-tool marker patch.
+    # The patch is version-locked and turns n8n tool decisions into markers
+    # which the bridge renders as native LibreChat tool-call cards.
+    build:
+      context: ./n8n
+      dockerfile: Dockerfile.external-tool-events
+      args:
+        N8N_VERSION: ${N8N_VERSION:-2.25.7}
+    image: govchat-n8n:external-tool-events-${N8N_VERSION:-2.25.7}
     container_name: librechat-n8n
     restart: unless-stopped
     depends_on:
@@ -474,6 +482,8 @@ services:
       # LLM target + webhook shared secret
       LITELLM_URL: ${LITELLM_URL}
       LITELLM_API_KEY: ${LITELLM_API_KEY}
+      # The bridge forwards n8n's trusted stream marker as a native LibreChat card.
+      N8N_OPENAI_BRIDGE_URL: http://n8n-openai-bridge:3333
       AZURE_OPENAI_STT_API_BASE: ${AZURE_OPENAI_STT_API_BASE}
       AZURE_OPENAI_STT_API_VERSION: ${AZURE_OPENAI_STT_API_VERSION}
       AZURE_OPENAI_STT_API_KEY: ${AZURE_OPENAI_STT_API_KEY}

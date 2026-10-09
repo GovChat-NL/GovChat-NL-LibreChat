@@ -1,0 +1,12 @@
+# Reproducible extension of the official pinned n8n runtime.
+# It adds a trusted marker to LangChain agent stream output when n8n selects a
+# workflow tool. The bridge converts that marker into a native LibreChat card.
+ARG N8N_VERSION=2.25.7
+FROM docker.n8n.io/n8nio/n8n:${N8N_VERSION}
+
+USER root
+COPY applyExternalToolMarkerPatch.cjs /usr/local/lib/node_modules/n8n/applyExternalToolMarkerPatch.cjs
+RUN node /usr/local/lib/node_modules/n8n/applyExternalToolMarkerPatch.cjs \
+    && rm /usr/local/lib/node_modules/n8n/applyExternalToolMarkerPatch.cjs
+
+USER node
