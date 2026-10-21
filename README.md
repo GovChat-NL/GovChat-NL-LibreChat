@@ -164,6 +164,25 @@ De **standaard chat** is gekoppeld via [`librechat.yaml`](librechat.yaml) aan [`
 - bridge model `govchat-orchestrator` -> `http://n8n:5678/webhook/orchestrator`
 - bridge-authenticatie via `${N8N_OPENAI_BRIDGE_BEARER_TOKEN}`
 
+### Native live tool-call kaarten
+
+De volledige architectuur, wijzigingen per repository, runner-vereisten,
+validatiestappen en uitrolprocedure staan in
+[`docs/live-tool-calling.md`](docs/live-tool-calling.md).
+
+De stack houdt de officiële LibreChat-image (`registry.librechat.ai/danny-avila/librechat:v0.8.7`) in gebruik. De bridge verpakt n8n tool-start-, completion- en close-events als een afgeschermde content-sideband in geldige OpenAI-streamchunks. `NODE_OPTIONS` laadt bij LibreChat-start de overlaybestanden uit `scripts/`; de overlay decodeert die sideband in de bestaande agent-callback en voert de events door LibreChat's eigen step-handlers. De sideband wordt niet als assistenttekst getoond. Gewone tekst blijft in dezelfde volgorde intact.
+
+De overlay controleert bij het laden of de verwachte LibreChat-bronankers aanwezig zijn. Bij een incompatibele LibreChat-release stopt de API-start bewust met een foutmelding in plaats van stilzwijgend tool-events als tekst te tonen of de native kaarten uit te schakelen. Werk de anchors en tests bij voordat een nieuwe image-tag wordt uitgerold.
+
+Na wijzigingen aan de overlay of bridge vanuit de projectmap, activeer je de feature-override naast de basisstack:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.live-tool-calling.yml --env-file .env up -d --build --force-recreate --no-deps librechat n8n-openai-bridge n8n
+docker compose -f docker-compose.yml -f docker-compose.live-tool-calling.yml --env-file .env logs -f librechat n8n-openai-bridge n8n
+```
+
+Controleer in de LibreChat-logs op `Loaded callbacks with content sideband decoder` en `Exposed message content parts for tool step indexing`. Test daarna een agentprompt die een n8n-tool met merkbare looptijd aanroept; de kaart hoort tijdens uitvoering zichtbaar te zijn en na afronding het toolresultaat te tonen. De v0.8.7-client ondersteunt `on_run_step_closed` niet en de overlay laat dat event daarom niet door.
+
 ### Context/token usage indicator (default uit)
 
 In deze stack staat de LibreChat context/token-indicator standaard uit in [`librechat.yaml`](librechat.yaml):

@@ -1,0 +1,196 @@
+# Native live tool-call cards in LibreChat
+
+This note documents the GovChat-NL implementation for showing tool calls made
+inside n8n as native, live LibreChat tool cards. It records why the overlay is
+needed, which repository owns each part, how events travel, and how to validate
+and deploy the integration.
+
+## Scope and design constraints
+
+- LibreChat continues to use the official
+  `registry.librechat.ai/danny-avila/librechat:v0.8.7` image. No forked or
+  custom-built LibreChat image is needed.
+- n8n continues to use the official `docker.n8n.io/n8nio/n8n` image. n8n
+  JavaScript patches are mounted as read-only overlays.
+- The bridge is the only application component whose source is built locally.
+- Tool events must use LibreChat's existing `on_run_step*` event contract so
+  the browser renders its native shimmer, arguments, and result card.
+
+## Why a sideband is required
+
+LibreChat calls the bridge through its OpenAI-compatible Chat Completions API.
+That response is consumed inside LibreChat by an OpenAI/LangChain parser. The
+parser accepts `data:` frames containing ordinary
+`chat.completion.chunk` objects; it does not forward arbitrary named SSE events
+or unknown fields. Sending `on_run_step` as a separate SSE frame therefore
+loses the event before it reaches LibreChat's resumable stream.
+
+The bridge encodes each allowed lifecycle event as a private content marker:
+
+1. The event JSON is UTF-8 encoded and base64url encoded.
+2. The marker is wrapped in record/unit separators with the `LCSTEP:` tag.
+3. The marker is placed in `choices[0].delta.content` of an otherwise valid
+   OpenAI streaming chunk.
+4. The LibreChat runtime overlay incrementally decodes the marker in the
+   existing `ON_MESSAGE_DELTA` callback. It forwards the event to LibreChat's
+   existing run-step handlers and suppresses the marker from assistant text.
+5. Text before and after markers is emitted normally and in its original order.
+
+The incremental decoder handles markers split across arbitrary model token
+boundaries. It only recognizes the four allowed event names, applies a size
+limit, and preserves malformed marker-like content as text.
+
+## Changes by repository
+
+### `n8n-openai-bridge/`
+
+- `src/n8nClient.js` parses streamed n8n NDJSON, tracks active tool calls, and
+  creates start/completion/close lifecycle payloads. Tool result data is not
+  also emitted as assistant prose. Tool-step indices increase across calls.
+- `src/utils/libreChatEvents.js` defines LibreChat-shaped lifecycle payloads.
+- `src/utils/libreChatEventProtocol.js` validates and encodes the content
+  sideband; its decoder is also exercised by tests.
+- `src/handlers/streamingHandler.js` embeds lifecycle markers in valid OpenAI
+  chunks while leaving normal text chunks compatible with LibreChat's model
+  parser.
+- `src/routes/chatCompletions.js` enables the streaming route for SSE clients
+  and passes the response identity used by run-step events.
+- `tests/` covers event parsing, lifecycle streaming, text preservation,
+  malformed markers, and monotonic step indices.
+
+The bridge repository's configured `origin` currently points at
+`sveneisenschmidt/n8n-openai-bridge`. Confirm the intended GovChat-NL fork or
+other writable remote before pushing this branch; do not publish this work to
+the upstream project by accident.
+
+### `GovChat-NL-LibreChat/`
+
+- `scripts/librechat-tool-event-preload.js` installs a CommonJS loader hook
+  before the API starts.
+- `scripts/librechat-tool-event-overlay.js` patches the stock image's existing
+  agent callbacks in memory. It supports both the pinned v0.8.7 callback API
+  and the newer source layout used by the overlay tests. The patch fails closed
+  if its required source anchors change, rather than silently rendering
+  sideband control data as user-visible text.
+- `scripts/librechat-tool-event-protocol.js` is the image-local decoder copy.
+- `docker-compose.live-tool-calling.yml` is an opt-in Compose overlay. It mounts
+  the LibreChat overlay files read-only, loads the preload through
+  `NODE_OPTIONS`, mounts the n8n streaming patches, and builds the local bridge.
+  It leaves the base `docker-compose.yml` and official LibreChat/n8n images
+  unchanged.
+- `docs/live-tool-calling.md` (this document) records the design and operations.
+
+The flow populates the existing `contentParts` aggregator so a tool card does
+not occupy the same content slot as the first `message_creation` text. LibreChat
+v0.8.7 does not handle `on_run_step_closed`; the overlay suppresses that event
+for this version. The completed event still supplies the tool output and
+progress.
+
+### `GovChat-NL-Agents/`
+
+The orchestrator's internal chat model must continue to use LiteLLM (or its
+configured model provider). LibreChat calls the bridge; the bridge calls the
+n8n orchestrator webhook; the orchestrator then calls its model provider. Do
+not configure the orchestrator's model node to call the bridge: that creates a
+recursive bridge → orchestrator → bridge call loop. No workflow model URL
+change is required for live tool cards. The working copy had such a URL change;
+it has been reverted. The `wait_test_tool` Code node is only a manual test
+fixture, not a requirement for ordinary production conversations, and should
+not be included in the production orchestrator workflow by default.
+
+### LibreChat source checkout
+
+No LibreChat source patch is required by this design. The official container
+image is patched at runtime through the compose overlay. The current local diff
+in `LibreChat/client/src/hooks/SSE/useStepHandler.ts` consists of temporary
+diagnostic logging and is not part of this feature; do not include it in a
+feature commit unless the diagnostics are separately requested.
+
+## n8n runner prerequisite
+
+The `wait_test_tool` fixture uses the JavaScript Code node. With external
+task-runner mode, n8n must have a healthy JavaScript runner connected to broker
+port 5679. If the JavaScript runner is unavailable, n8n reports
+`No matching task offer ... type "javascript"` and Code-node requests time out;
+the agent may then retry the tool. Check the runner logs for `Found runner
+unresponsive` or `Task broker is down` before diagnosing this as a LibreChat
+streaming problem. Restarting the runner can restore service, but recurring
+runner failures need a separate infrastructure investigation.
+
+## Verification
+
+Bridge tests (run in the bridge repository):
+
+```bash
+npm test -- --runInBand tests/n8nClient.test.js tests/handlers/streamingHandler.test.js tests/utils/libreChatEventProtocol.test.js tests/routes/chatCompletions.test.js
+npx eslint src/n8nClient.js src/handlers/streamingHandler.js src/utils/libreChatEventProtocol.js src/routes/chatCompletions.js tests/n8nClient.test.js tests/handlers/streamingHandler.test.js tests/utils/libreChatEventProtocol.test.js tests/routes/chatCompletions.test.js
+```
+
+Overlay tests and stock-image smoke check:
+
+```bash
+node --test tests/librechat-tool-event-overlay.test.js
+```
+
+The integration was also smoke-tested against the pinned v0.8.7 image by
+loading the patched agent callback and initialize modules with the overlay
+preload active. The complete browser flow should additionally be tested by
+asking the configured agent to call a tool once, checking that the card appears
+at start, the final assistant text remains visible, and the tool output appears
+after completion.
+
+## Deployment
+
+From `GovChat-NL-LibreChat/`, after the bridge feature branch has been checked
+out in the sibling `../n8n-openai-bridge` directory:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.live-tool-calling.yml --env-file .env up -d --build --force-recreate --no-deps librechat n8n-openai-bridge n8n
+docker compose -f docker-compose.yml -f docker-compose.live-tool-calling.yml --env-file .env logs -f librechat n8n-openai-bridge n8n n8n-runners
+```
+
+The runner is a separate service; restart it independently if its JavaScript
+worker is stuck:
+
+```bash
+docker compose --env-file .env restart n8n-runners
+```
+
+The proxy may need a restart after LibreChat gets a new Docker IP, because nginx
+can retain a cached upstream address:
+
+```bash
+docker compose --env-file .env restart librechat-proxy
+```
+
+Verify the overlay startup messages, the bridge `/health` endpoint, n8n `/healthz`,
+and a fresh chat. Do not recreate unrelated database services merely to deploy
+the overlay; an unhealthy dependency healthcheck can leave newly created
+application containers waiting for Compose even when the dependency itself is
+still reachable.
+
+## GitHub branch and PR plan
+
+Create feature branches from each repository's `main`, but only two repositories
+need feature PRs for the production implementation:
+
+| Repository | Branch | Contents |
+| --- | --- | --- |
+| `GovChat-NL-LibreChat` | `feature/live-tool-calling` | Runtime overlay, optional Compose overlay, deployment docs, n8n streaming mount patches. |
+| `n8n-openai-bridge` | `feature/live-tool-calling` | Sideband protocol, event detection and OpenAI chunk forwarding, regression tests. |
+
+No patch to the LibreChat source repository is needed. The local change in
+`LibreChat/client/src/hooks/SSE/useStepHandler.ts` is diagnostic logging only
+and should stay out of these PRs. Do not create a `GovChat-NL-Agents` feature
+PR for the temporary `wait_test_tool` fixture. Keep the orchestrator model
+pointing at LiteLLM; pointing it at the bridge would recurse back to the same
+webhook.
+
+The bridge repository's current `origin` remote points to the upstream
+`sveneisenschmidt/n8n-openai-bridge`. Push the bridge feature branch to the
+GovChat-NL fork (or another explicitly authorized writable fork), not to the
+upstream remote by default. Do not stage `.env`, diagnostic-only edits, the
+obsolete hard-coded request overlay, or the test-only wait tool in production
+PRs. The base compose file also contains unrelated local infrastructure edits;
+use the feature-specific Compose overlay in the feature PR rather than
+committing those unrelated hunks.
