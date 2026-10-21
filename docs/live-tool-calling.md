@@ -73,11 +73,11 @@ the upstream project by accident.
   if its required source anchors change, rather than silently rendering
   sideband control data as user-visible text.
 - `scripts/librechat-tool-event-protocol.js` is the image-local decoder copy.
-- `docker-compose.live-tool-calling.yml` is an opt-in Compose overlay. It mounts
-  the LibreChat overlay files read-only, loads the preload through
-  `NODE_OPTIONS`, mounts the n8n streaming patches, and builds the local bridge.
-  It leaves the base `docker-compose.yml` and official LibreChat/n8n images
-  unchanged.
+- `docker-compose.yml` mounts the LibreChat overlay files read-only, loads the
+  preload through `NODE_OPTIONS`, and mounts the n8n streaming patches. These
+  mounts are required for the sideband events to become native LibreChat steps.
+- `docker-compose.live-tool-calling.yml` is an optional bridge build override
+  for deployments that need to build the checked-out bridge source locally.
 - `docs/live-tool-calling.md` (this document) records the design and operations.
 
 The flow populates the existing `contentParts` aggregator so a tool card does
@@ -141,13 +141,18 @@ after completion.
 
 ## Deployment
 
-From `GovChat-NL-LibreChat/`, after the bridge feature branch has been checked
-out in the sibling `../n8n-openai-bridge` directory:
+From `GovChat-NL-LibreChat/`, with the bridge feature branch checked out in the
+sibling `../n8n-openai-bridge` directory:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.live-tool-calling.yml --env-file .env up -d --build --force-recreate --no-deps librechat n8n-openai-bridge n8n
 docker compose -f docker-compose.yml -f docker-compose.live-tool-calling.yml --env-file .env logs -f librechat n8n-openai-bridge n8n n8n-runners
 ```
+
+The live-tool-calling override is only needed when the base stack still points
+to a prebuilt bridge image; the LibreChat and n8n overlays are activated by the
+base compose file. If you deploy with another Compose file, make sure it carries
+the `NODE_OPTIONS` preload and all five bind mounts from the base services.
 
 The runner is a separate service; restart it independently if its JavaScript
 worker is stuck:

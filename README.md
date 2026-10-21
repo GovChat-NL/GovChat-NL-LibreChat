@@ -174,7 +174,7 @@ De stack houdt de officiële LibreChat-image (`registry.librechat.ai/danny-avila
 
 De overlay controleert bij het laden of de verwachte LibreChat-bronankers aanwezig zijn. Bij een incompatibele LibreChat-release stopt de API-start bewust met een foutmelding in plaats van stilzwijgend tool-events als tekst te tonen of de native kaarten uit te schakelen. Werk de anchors en tests bij voordat een nieuwe image-tag wordt uitgerold.
 
-Na wijzigingen aan de overlay of bridge vanuit de projectmap, activeer je de feature-override naast de basisstack:
+De basisstack koppelt de LibreChat-runtime-overlay en n8n-streamingpatches automatisch. Als je ook de bridge uit de lokale sibling-checkout wilt bouwen, voeg je de feature-override toe. Na wijzigingen aan overlay of bridge herstart je de betrokken services:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.live-tool-calling.yml --env-file .env up -d --build --force-recreate --no-deps librechat n8n-openai-bridge n8n

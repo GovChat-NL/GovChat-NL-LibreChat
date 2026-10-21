@@ -1,19 +1,6 @@
-# Optional, feature-only overrides for native n8n tool-call cards.
-# Keep the base stack and official LibreChat/n8n images unchanged.
+# Optional bridge build override for native n8n tool-call cards.
+# LibreChat and n8n runtime overlays are mounted by the base compose file.
 services:
-  librechat:
-    environment:
-      NODE_OPTIONS: --require=/app/govchat-overlay/librechat-tool-event-preload.js
-    volumes:
-      - ./scripts/librechat-tool-event-overlay.js:/app/govchat-overlay/librechat-tool-event-overlay.js:ro
-      - ./scripts/librechat-tool-event-protocol.js:/app/govchat-overlay/librechat-tool-event-protocol.js:ro
-      - ./scripts/librechat-tool-event-preload.js:/app/govchat-overlay/librechat-tool-event-preload.js:ro
-
-  n8n:
-    volumes:
-      - ./scripts/n8n-createAgentSequence.patched.js:/usr/local/lib/node_modules/n8n/node_modules/.pnpm/@n8n+n8n-nodes-langchain@file+packages+@n8n+nodes-langchain_8bf81e0cdf1fe65cc684d3daaa3ca5c1/node_modules/@n8n/n8n-nodes-langchain/dist/nodes/agents/Agent/agents/ToolsAgent/V3/helpers/createAgentSequence.js:ro
-      - ./scripts/n8n-processEventStream.patched.js:/usr/local/lib/node_modules/n8n/node_modules/.pnpm/@n8n+n8n-nodes-langchain@file+packages+@n8n+nodes-langchain_8bf81e0cdf1fe65cc684d3daaa3ca5c1/node_modules/@n8n/n8n-nodes-langchain/dist/utils/agent-execution/processEventStream.js:ro
-
   n8n-openai-bridge:
     build:
       context: ../n8n-openai-bridge

@@ -35,12 +35,16 @@ services:
       - /opt/librechat/uploads:/app/uploads
       - /opt/librechat/logs:/app/api/logs
       - /opt/librechat/images:/app/client/public/images
+      - ./scripts/librechat-tool-event-overlay.js:/app/govchat-overlay/librechat-tool-event-overlay.js:ro
+      - ./scripts/librechat-tool-event-protocol.js:/app/govchat-overlay/librechat-tool-event-protocol.js:ro
+      - ./scripts/librechat-tool-event-preload.js:/app/govchat-overlay/librechat-tool-event-preload.js:ro
     environment:
       # --- Applicatie ---
       APP_TITLE: ${APP_TITLE:-GovChat-NL}
       HOST: 0.0.0.0
       PORT: "3080"
       NODE_ENV: production
+      NODE_OPTIONS: --require=/app/govchat-overlay/librechat-tool-event-preload.js
       # Include Agents endpoint by default so the Agents UI is visible in LibreChat.
       ENDPOINTS: ${ENDPOINTS:-custom,agents}
       DOMAIN_CLIENT: ${PUBLIC_BASE_URL}
@@ -484,6 +488,8 @@ services:
       - n8n-data:/home/node/.n8n
       - ./n8n/bootstrap:/bootstrap:ro
       - /opt/librechat/images:/shared-images
+      - ./scripts/n8n-createAgentSequence.patched.js:/usr/local/lib/node_modules/n8n/node_modules/.pnpm/@n8n+n8n-nodes-langchain@file+packages+@n8n+nodes-langchain_8bf81e0cdf1fe65cc684d3daaa3ca5c1/node_modules/@n8n/n8n-nodes-langchain/dist/nodes/agents/Agent/agents/ToolsAgent/V3/helpers/createAgentSequence.js:ro
+      - ./scripts/n8n-processEventStream.patched.js:/usr/local/lib/node_modules/n8n/node_modules/.pnpm/@n8n+n8n-nodes-langchain@file+packages+@n8n+nodes-langchain_8bf81e0cdf1fe65cc684d3daaa3ca5c1/node_modules/@n8n/n8n-nodes-langchain/dist/utils/agent-execution/processEventStream.js:ro
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://localhost:5678/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
       interval: 20s
