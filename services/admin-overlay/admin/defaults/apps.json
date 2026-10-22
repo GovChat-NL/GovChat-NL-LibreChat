@@ -1,0 +1,61 @@
+{
+    "title": "App Launcher",
+    "enabled": true,
+    "apps": [
+        {
+            "id": "chat",
+            "name": "Chat",
+            "icon": "\uD83D\uDCAC",
+            "description": "Terug naar de chatomgeving",
+            "url": "/",
+            "target": "navigate"
+        },
+        {
+            "id": "versimpelaar",
+            "name": "Versimpelaar",
+            "icon": "\uD83D\uDD24",
+            "description": "Vereenvoudig teksten naar B1 of B2 taalniveau",
+            "url": "https://n8n.example.com/webhook/versimpelaar",
+            "target": "versimpelaar",
+            "config": {
+                "language_levels": ["B1", "B2"],
+                "default_level": "B1"
+            }
+        },
+        {
+            "id": "beleidskompas",
+            "name": "Beleidskompas",
+            "icon": "\uD83E\uDDED",
+            "description": "Vier-stappen ondersteuning voor provinciale beleidsafweging (SiS 4.0)",
+            "url": "/c/new",
+            "target": "beleidskompas",
+            "config": {
+                "specialist_team": "Bij hoge juridische/financiële impact: betrek concernjurist, financieel adviseur en programmaregisseur.",
+                "sources": [
+                    "SiS 4.0 Strategisch kader",
+                    "SiS 4.0 Uitvoeringskader",
+                    "Provinciale Instrumentenkoffer",
+                    "Coalitieakkoord en beleidskaders",
+                    "Overzicht wettelijke taken Provincie"
+                ]
+            }
+        },
+        {
+            "id": "transcriptie",
+            "name": "Live transcriptie",
+            "icon": "\uD83C\uDFA4",
+            "description": "Live spraak-naar-tekst met sprekerbeheer",
+            "url": "https://n8n.example.com/webhook/transcriptie-litellm",
+            "target": "transcriptie",
+            "config": {
+                "webhook_token": "change-me",
+                "chunk_ms": 5000,
+                "max_duration_minutes": 120,
+                "litellm_model": "gpt-4o-transcribe",
+                "language": "nl",
+                "enable_speaker_labels": true,
+                "include_timestamps": true
+            }
+        }
+    ]
+}

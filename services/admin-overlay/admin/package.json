@@ -1,0 +1,15 @@
+{
+  "name": "govchat-admin",
+  "version": "1.0.0",
+  "description": "GovChat Admin Panel - beheer handleiding en apps configuratie",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "cookie-parser": "^1.4.7",
+    "sharp": "^0.34.3",
+    "ws": "^8.18.3"
+  }
+}
