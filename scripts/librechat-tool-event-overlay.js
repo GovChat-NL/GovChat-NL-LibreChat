@@ -90,9 +90,6 @@ const HANDLER_PATCH = `    [GraphEvents.ON_MESSAGE_DELTA]: {
             }
             const eventName = segment.event.event;
             let eventData = segment.event.data;
-            if (eventName === GraphEvents.ON_RUN_STEP) {
-              __NORMALIZE_STEP_INDEX__
-            }
             if (eventName === GraphEvents.ON_RUN_STEP && streamId) {
               const job = await GenerationJobManager.getJob(streamId).catch(() => null);
               const responseMessageId = job?.metadata?.responseMessageId;
@@ -149,6 +146,8 @@ function patchCallbacksSource(source) {
   patched = patched.replace(
     handlersAnchor,
     `  const libreChatStepDecoder = createLibreChatStepEventDecoder();
+  let nextLibreChatToolStepIndex = 0;
+  const libreChatAssistantSteps = new Map();
   const emitDecodedStepEvent = (event, data) => {
     if (event === 'on_run_step_closed') {
       return Promise.resolve();
@@ -164,8 +163,49 @@ function patchCallbacksSource(source) {
     }
     return Promise.resolve();
   };
-${handlersAnchor}`,
+    ${handlersAnchor}`,
   );
+  const runStepHandlerAnchor = '    [GraphEvents.ON_RUN_STEP]: {';
+  const handlersStart = patched.indexOf(handlersAnchor);
+  const runStepHandlerStart = patched.indexOf(runStepHandlerAnchor, handlersStart);
+  const runStepHandleStart =
+    runStepHandlerStart >= 0 ? patched.indexOf('handle: async', runStepHandlerStart) : -1;
+  const runStepBodyStart = runStepHandleStart >= 0 ? patched.indexOf('=> {', runStepHandleStart) + 4 : -1;
+  if (runStepHandleStart >= 0 && runStepBodyStart > 3) {
+    patched =
+      patched.slice(0, runStepBodyStart) +
+      `
+        if (data?.stepDetails?.type === 'tool_calls') {
+          data = { ...data, index: nextLibreChatToolStepIndex++ };
+          for (const [stepId, assistantStep] of libreChatAssistantSteps) {
+            const shiftedStep = { ...assistantStep, index: nextLibreChatToolStepIndex };
+            const previousIndex = assistantStep.index;
+            const previousContent = contentParts?.[previousIndex];
+            const shiftedContent = contentParts?.[shiftedStep.index];
+            if (previousContent && previousIndex !== shiftedStep.index) {
+              if (!shiftedContent) {
+                contentParts[shiftedStep.index] = previousContent;
+                delete contentParts[previousIndex];
+              } else if (previousContent.type === 'text' && shiftedContent.type === 'text') {
+                contentParts[shiftedStep.index] = {
+                  ...shiftedContent,
+                  text: (previousContent.text || '') + (shiftedContent.text || ''),
+                };
+                delete contentParts[previousIndex];
+              }
+            }
+            libreChatAssistantSteps.set(stepId, shiftedStep);
+            aggregateContent({ event: GraphEvents.ON_RUN_STEP, data: shiftedStep });
+            await emitDecodedStepEvent(GraphEvents.ON_RUN_STEP, shiftedStep);
+          }
+        } else if (data && typeof data === 'object') {
+          data = { ...data, index: Math.max(data.index ?? 0, nextLibreChatToolStepIndex) };
+          if (data.id) {
+            libreChatAssistantSteps.set(data.id, data);
+          }
+        }` +
+      patched.slice(runStepBodyStart);
+  }
   const emitDelta = source.includes('const emitForJob =')
     ? 'emitForJob({ event: GraphEvents.ON_MESSAGE_DELTA, data })'
     : 'emitEvent(res, streamId, { event: GraphEvents.ON_MESSAGE_DELTA, data })';
@@ -174,19 +214,7 @@ ${handlersAnchor}`,
     : 'emitEvent(res, streamId, { event, data })';
   patched = patched.replace(/__EMIT_DELTA__/g, emitDelta);
   patched = patched.replace('__EMIT_STEP__', emitStep);
-  const normalizeStepIndex = source.includes('stepMap = null')
-    ? `const maxExistingIndex = Math.max(
-                  -1,
-                  ...[...(stepMap?.values?.() ?? [])].map((step) => step?.index ?? -1),
-                  (contentParts?.length ?? 0) - 1,
-                );
-                eventData = { ...eventData, index: maxExistingIndex + 1 };`
-    : `eventData = {
-                  ...eventData,
-                  index: Math.max(1, contentParts?.length ?? 0, (eventData.index ?? 0) + 1),
-                };`;
-  const handlerPatch = HANDLER_PATCH.replace('__NORMALIZE_STEP_INDEX__', normalizeStepIndex);
-  return patched.replace(handlerAnchor, handlerPatch);
+  return patched.replace(handlerAnchor, HANDLER_PATCH);
 }
 
 function patchInitializeSource(source) {

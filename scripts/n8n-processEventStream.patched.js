@@ -9,8 +9,9 @@ async function processEventStream(ctx, eventStream, itemIndex) {
     const emittedToolCallIds = new Set();
     const activeToolCalls = new Map();
     ctx.sendChunk('begin', itemIndex);
-    for await (const event of eventStream) {
-        switch (event.event) {
+    try {
+        for await (const event of eventStream) {
+            switch (event.event) {
             case 'on_chat_model_stream':
                 const chunk = event.data?.chunk;
                 if (chunk?.content) {
@@ -61,17 +62,41 @@ async function processEventStream(ctx, eventStream, itemIndex) {
                     }
                 }
                 break;
-            default:
+            case 'on_tool_end':
+            case 'on_tool_error': {
+                const toolName = event.name || event.data?.name || '';
+                const toolInput = event.data?.input;
+                const activeCalls = [...activeToolCalls.values()];
+                const nameMatches = activeCalls.filter((call) => !toolName || call.tool === toolName);
+                const candidates = nameMatches.length > 0 ? nameMatches : activeCalls;
+                const matchedByInput = candidates.find((call) => toolInput !== undefined &&
+                    JSON.stringify(call.toolInput) === JSON.stringify(toolInput));
+                const matched = matchedByInput || (candidates.length === 1 ? candidates[0] : null);
+                if (matched) {
+                    activeToolCalls.delete(matched.toolCallId);
+                    const isError = event.event === 'on_tool_error';
+                    const result = isError
+                        ? { type: 'tool_error', id: matched.toolCallId, name: matched.tool, error: String(event.data?.error?.message || event.data?.error || 'Tool execution failed') }
+                        : { type: 'tool_result', id: matched.toolCallId, name: matched.tool, output: typeof event.data?.output === 'string' ? event.data.output : JSON.stringify(event.data?.output ?? '') };
+                    ctx.sendChunk(result.type, itemIndex, JSON.stringify(result));
+                }
                 break;
+            }
+                default:
+                    break;
+            }
         }
-    }
-    for (const activeToolCall of activeToolCalls.values()) {
-        ctx.sendChunk('tool_result', itemIndex, JSON.stringify({
-            type: 'tool_result',
-            id: activeToolCall.toolCallId,
-            name: activeToolCall.tool,
-            output: activeToolCall.log || agentResult.output || '',
-        }));
+    } catch (streamError) {
+        for (const activeToolCall of activeToolCalls.values()) {
+            ctx.sendChunk('tool_error', itemIndex, JSON.stringify({
+                type: 'tool_error',
+                id: activeToolCall.toolCallId,
+                name: activeToolCall.tool,
+                error: `Tool stream failed: ${streamError?.message || String(streamError)}`,
+            }));
+        }
+        activeToolCalls.clear();
+        throw streamError;
     }
     ctx.sendChunk('end', itemIndex);
     if (toolCalls.length > 0) {

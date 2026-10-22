@@ -45,8 +45,17 @@ limit, and preserves malformed marker-like content as text.
 ### `n8n-openai-bridge/`
 
 - `src/n8nClient.js` parses streamed n8n NDJSON, tracks active tool calls, and
-  creates start/completion/close lifecycle payloads. Tool result data is not
-  also emitted as assistant prose. Tool-step indices increase across calls.
+  creates start/completion/close lifecycle payloads. Serialized tool-call JSON
+  embedded in assistant text is stripped incrementally (including across chunk
+  boundaries); tool-call log lines are buffered and suppressed without hiding
+  the final assistant answer. The n8n `tool_call`/`tool_result` chunks may themselves wrap a
+  second typed JSON event in `content`; the bridge preserves that inner event
+  type so a result cannot be mistaken for another start. Results and errors are
+  matched by call ID or tool name.
+  Tool-step indices increase across calls. The patched n8n event stream does not
+  close a tool card merely because an individual model-event stream ended; when
+  no result event is emitted, the bridge closes it with empty output only after
+  the overall response stream ends.
 - `src/utils/libreChatEvents.js` defines LibreChat-shaped lifecycle payloads.
 - `src/utils/libreChatEventProtocol.js` validates and encodes the content
   sideband; its decoder is also exercised by tests.
@@ -58,10 +67,9 @@ limit, and preserves malformed marker-like content as text.
 - `tests/` covers event parsing, lifecycle streaming, text preservation,
   malformed markers, and monotonic step indices.
 
-The bridge repository's configured `origin` currently points at
-`sveneisenschmidt/n8n-openai-bridge`. Confirm the intended GovChat-NL fork or
-other writable remote before pushing this branch; do not publish this work to
-the upstream project by accident.
+The bridge repository's configured `origin` points at
+`GovChat-NL/n8n-openai-bridge`. Confirm the authorized destination before pushing
+this branch; do not publish this work to the upstream project by accident.
 
 ### `GovChat-NL-LibreChat/`
 
@@ -78,13 +86,20 @@ the upstream project by accident.
   mounts are required for the sideband events to become native LibreChat steps.
 - `docker-compose.live-tool-calling.yml` is an optional bridge build override
   for deployments that need to build the checked-out bridge source locally.
+- `scripts/n8n-processEventStream.patched.js` forwards actual `on_tool_end` and
+  `on_tool_error` events. It no longer treats a tool-call log or final assistant
+  text as a successful tool result.
 - `docs/live-tool-calling.md` (this document) records the design and operations.
 
-The flow populates the existing `contentParts` aggregator so a tool card does
-not occupy the same content slot as the first `message_creation` text. LibreChat
-v0.8.7 does not handle `on_run_step_closed`; the overlay suppresses that event
-for this version. The completed event still supplies the tool output and
-progress.
+The overlay assigns tool steps the leading content indices and moves an
+already-started assistant message step behind them. This keeps tool cards in
+chronological order above the final answer, including when the assistant step
+arrives before the tool event. When a later tool step claims an index already
+used by streamed assistant text, the overlay moves that accumulated text with
+the assistant step so the native aggregator can retain both tool cards.
+LibreChat v0.8.7 does not handle
+`on_run_step_closed`; the overlay suppresses that event for this version. The
+completed event still supplies tool progress and any non-empty output.
 
 ### `GovChat-NL-Agents/`
 
