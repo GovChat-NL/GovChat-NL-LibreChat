@@ -189,6 +189,10 @@ De **standaard chat** is gekoppeld via [`librechat.yaml`](librechat.yaml) aan [`
 
 De standaardimage is vastgepind op OCI digest `sha256:d61947deaa1b094d03fbdb268fbaf9f35766a792c8776d8014bf7d1188f0232d`; er wordt geen `latest`-tag gebruikt. Het bridge-project en zijn releasecyclus blijven apart: [GovChat-NL/n8n-openai-bridge](https://github.com/GovChat-NL/n8n-openai-bridge). De lokale ontwikkeloverride staat in [`docker-compose.bridge-dev.yml`](docker-compose.bridge-dev.yml) en bouwt alleen wanneer een bridge-checkout naast deze repository staat. Zie de migratiedocumentatie voor de niet-geverifieerde relatie tussen de legacy gepubliceerde artifact en de huidige broncheckout.
 
+### Native live tool-call kaarten
+
+De runtime-overlay voor native kaarten wordt door [`docker-compose.yml`](docker-compose.yml) in LibreChat en n8n geladen. Tool-lifecycle-events worden als afgeschermde sideband door de bridge gestreamd; daarom vereist een volledige live test ook de companion-branch `feature/live-tool-calling` van de afzonderlijke bridge-repository. De standaard digest in [`bridge/models.json`](bridge/models.json) blijft ongewijzigd. Zie [`docs/live-tool-calling.md`](docs/live-tool-calling.md) voor de lokale build override, event-flow en teststappen.
+
 ### Context/token usage indicator (default uit)
 
 In deze stack staat de LibreChat context/token-indicator standaard uit in [`librechat.yaml`](librechat.yaml):
