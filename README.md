@@ -59,7 +59,7 @@ De stack is breder dan alleen “orchestrator + versimpelaar” en bevat onder m
   - `rag-api`
   - `pgadmin`
 
-> Let op: in deze specifieke stack staan `pgvector` + `rag-api` centraal voor optionele RAG-profielen. Qdrant wordt elders in GovChat-context genoemd, maar is geen standaardservice in deze compose.
+> Let op: `pgvector` + `rag-api` horen bij de optionele LibreChat-RAG-profielen. OpenBesluitvorming gebruikt de afzonderlijke, interne `qdrant`-service uit deze Compose-configuratie.
 
 ## Services in de standaard (simpele) start
 
