@@ -23,6 +23,27 @@ Every release contains exactly these deliverables:
 
 Use [`releases/openbesluitvorming-provincie-limburg.manifest.example.json`](../releases/openbesluitvorming-provincie-limburg.manifest.example.json) as the contract reference. The release must contain the generated manifest, not the example file. The manifest field `source_changes_cursor` is mandatory: it connects the immutable starter snapshot to the subsequent OpenBesluitvorming delta-sync position.
 
+## Local Compose test restore
+
+The pinned release assets are downloaded to the Git-ignored `testdata/openbesluitvorming/` directory with the GitHub CLI. The opt-in Compose profile verifies the manifest size and SHA-256, copies the snapshot into a named Docker volume, and restores it into the internal Qdrant service. The 264,777,216-byte snapshot remains outside Git and is cached in Docker storage after the first restore. This profile is not run by a normal `docker compose up`.
+
+In PowerShell, download the pinned release assets, then explicitly acknowledge the test restore and run the one-shot Compose service:
+
+```powershell
+New-Item -ItemType Directory -Force testdata/openbesluitvorming | Out-Null
+gh release download v2026.10.08 --repo GovChat-NL/GovChat-NL-LibreChat --pattern 'openbesluitvorming-provincie_limburg-v2026.10.08.manifest.json' --dir testdata/openbesluitvorming
+gh release download v2026.10.08 --repo GovChat-NL/GovChat-NL-LibreChat --pattern '*.snapshot' --dir testdata/openbesluitvorming
+$manifest = Get-Content -Raw testdata/openbesluitvorming/openbesluitvorming-provincie_limburg-v2026.10.08.manifest.json | ConvertFrom-Json
+Get-FileHash -Algorithm SHA256 (Join-Path testdata/openbesluitvorming $manifest.artifact.file_name)
+$env:OPENBESLUITVORMING_TEST_RESTORE_APPROVED = 'yes'
+docker compose --env-file .env.example --profile openbesluitvorming-test run --rm openbesluitvorming-test-restore
+Remove-Item Env:OPENBESLUITVORMING_TEST_RESTORE_APPROVED
+```
+
+Compose starts Qdrant if needed and leaves it running after the restore container exits. Then start the rest of the application normally with `docker compose up -d`. The imported collection is `openraadsinformatie_v1` and the search workflow defaults to that collection.
+
+The restore refuses to replace an existing collection. If you intentionally need to reset the local test collection, set both `OPENBESLUITVORMING_TEST_RESTORE_APPROVED=yes` and `OPENBESLUITVORMING_TEST_RESTORE_REPLACE_EXISTING=yes` for that run. This deletes the existing `openraadsinformatie_v1` collection before restoring the release snapshot.
+
 ## Publishing a release artifact
 
 Publishing is an explicit operator task, never a Compose-start action.

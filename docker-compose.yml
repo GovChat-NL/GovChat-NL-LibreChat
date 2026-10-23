@@ -619,12 +619,38 @@ services:
       - "6334"
     volumes:
       - qdrant-storage:/qdrant/storage
+      - qdrant-snapshot-cache:/qdrant/snapshots
     healthcheck:
-      test: ["CMD-SHELL", "timeout 5 sh -c '</dev/tcp/127.0.0.1/6333'"]
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/6333'"]
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 15s
+    networks:
+      - librechat-net
+
+  # ---------------------------------------------------------------------------
+  #  Opt-in local test data restore. Not part of normal Compose startup.
+  #  Run with --profile openbesluitvorming-test after explicitly acknowledging.
+  # ---------------------------------------------------------------------------
+  openbesluitvorming-test-restore:
+    image: python:3.12-slim
+    container_name: librechat-openbesluitvorming-test-restore
+    restart: "no"
+    profiles:
+      - openbesluitvorming-test
+    depends_on:
+      qdrant:
+        condition: service_healthy
+    environment:
+      QDRANT_URL: http://qdrant:6333
+      OPENBESLUITVORMING_TEST_RESTORE_APPROVED: ${OPENBESLUITVORMING_TEST_RESTORE_APPROVED:-}
+      OPENBESLUITVORMING_TEST_RESTORE_REPLACE_EXISTING: ${OPENBESLUITVORMING_TEST_RESTORE_REPLACE_EXISTING:-}
+    volumes:
+      - qdrant-snapshot-cache:/qdrant/snapshots
+      - ./testdata/openbesluitvorming:/testdata:ro
+      - ./scripts/openbesluitvorming-test-restore.py:/restore.py:ro
+    entrypoint: ["python", "/restore.py"]
     networks:
       - librechat-net
 
@@ -803,3 +829,4 @@ volumes:
   n8n-data:
   n8n-postgres-data:
   qdrant-storage:
+  qdrant-snapshot-cache:

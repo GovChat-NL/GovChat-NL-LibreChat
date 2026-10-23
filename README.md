@@ -30,6 +30,8 @@ De snapshot-ingest en delta-sync zijn standaard inactief. Configureer de zichtba
 
 De zoekworkflow gebruikt begrensde queryvarianten, brede Qdrant-kandidaten, document-level reciprocal-rank fusion en optionele LiteLLM-reranking. Resultaten bevatten bronmetadata, beschikbare documentlinks en een expliciete dekkingsmelding; vectorzoekresultaten zijn geen volledigheidsgarantie. Bij politiek gevoelige vragen gebruikt de orchestrator deze zoektool en citeert hij primaire bronlinks. De delta-sync verwerkt maximaal één pagina van 500 wijzigingen per uitvoering en hoort pas te worden geactiveerd nadat de initiële snapshot-checkpoint is voltooid; de aanbevolen frequentie is eens per zes uur.
 
+Voor lokaal testen kun je de gepubliceerde Provincie Limburg-snapshot expliciet inladen via het Compose-profiel `openbesluitvorming-test`; zie [`docs/openbesluitvorming-release-artifacts.md`](docs/openbesluitvorming-release-artifacts.md). Dit restore-profiel wordt niet gestart door de normale `docker compose up`.
+
 ### Snelle start en controles
 
 1. Kopieer `.env.example` naar een lokaal, genegeerd `.env` en vul de omgevingsspecifieke URLs, provider/API-sleutels en sterke willekeurige secrets in. Commit nooit `.env`.
