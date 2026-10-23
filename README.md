@@ -22,6 +22,14 @@ Deze repository is de bron van waarheid voor de deployment en bijbehorende confi
 
 De request-flow blijft LibreChat → OpenAI-compatibele bridge → n8n webhook → workflow/LiteLLM (rechtstreeks vanuit n8n). Native live tool-cards zijn de bedoelde tool-lifecyclepresentatie, maar de benodigde runtimepatches zitten niet in deze migratiebranch en zijn hier dus nog niet actief. Zie [`docs/live-tool-calling.md`](docs/live-tool-calling.md) en [`docs/monorepo-migration.md`](docs/monorepo-migration.md).
 
+## OpenBesluitvorming
+
+De OpenBesluitvorming-workflows maken publieke besluitvormingsdocumenten doorzoekbaar met bronverwijzingen. De workflow-JSON staat als monorepo-assets in [`agents/n8n/workflows/`](agents/n8n/workflows/): documentworker, checkpointed snapshot-ingest, high-recall search, incremental sync en de orchestrator-integratie. De lokale n8n-bootstrap importeert deze bestanden samen met de overige agent-workflows.
+
+De snapshot-ingest en delta-sync zijn standaard inactief. Configureer de zichtbare workflow-nodes voor bron en collectie, voltooi eerst de initiële snapshot en activeer daarna pas de delta-sync. Qdrant is een interne Compose-service zonder gepubliceerde hostpoort. Zie [`docs/openbesluitvorming-release-artifacts.md`](docs/openbesluitvorming-release-artifacts.md) voor snapshotdistributie, governance, herstel en wekelijkse release-operaties.
+
+De zoekworkflow gebruikt begrensde queryvarianten, brede Qdrant-kandidaten, document-level reciprocal-rank fusion en optionele LiteLLM-reranking. Resultaten bevatten bronmetadata, beschikbare documentlinks en een expliciete dekkingsmelding; vectorzoekresultaten zijn geen volledigheidsgarantie. Bij politiek gevoelige vragen gebruikt de orchestrator deze zoektool en citeert hij primaire bronlinks. De delta-sync verwerkt maximaal één pagina van 500 wijzigingen per uitvoering en hoort pas te worden geactiveerd nadat de initiële snapshot-checkpoint is voltooid; de aanbevolen frequentie is eens per zes uur.
+
 ### Snelle start en controles
 
 1. Kopieer `.env.example` naar een lokaal, genegeerd `.env` en vul de omgevingsspecifieke URLs, provider/API-sleutels en sterke willekeurige secrets in. Commit nooit `.env`.
@@ -68,6 +76,7 @@ Standaard actief met `docker compose up -d`:
 - `n8n-postgres`
 - `n8n`
 - `n8n-bootstrap` (eenmalige workflow-import)
+- `qdrant` (interne vector-store voor OpenBesluitvorming; geen hostpoort)
 
 > n8n versie is gepind via `N8N_VERSION` (default: `2.25.7`).
 

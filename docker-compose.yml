@@ -607,6 +607,28 @@ services:
       - librechat-net
 
   # ---------------------------------------------------------------------------
+  #  Qdrant - interne vector store voor OpenBesluitvorming-workflows
+  #  Geen hostpoort: alleen services op het Compose-netwerk kunnen erbij.
+  # ---------------------------------------------------------------------------
+  qdrant:
+    image: qdrant/qdrant:v1.16.2
+    container_name: librechat-qdrant
+    restart: unless-stopped
+    expose:
+      - "6333"
+      - "6334"
+    volumes:
+      - qdrant-storage:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 5 sh -c '</dev/tcp/127.0.0.1/6333'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 15s
+    networks:
+      - librechat-net
+
+  # ---------------------------------------------------------------------------
   #  pgvector 0.8.0 (pg16) - Vector extensie voor RAG embeddings
   #  pg16 omdat de data directory al geinitialiseerd is met pg16
   # ---------------------------------------------------------------------------
@@ -780,3 +802,4 @@ networks:
 volumes:
   n8n-data:
   n8n-postgres-data:
+  qdrant-storage:

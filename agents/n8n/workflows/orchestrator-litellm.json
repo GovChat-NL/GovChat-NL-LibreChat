@@ -44,7 +44,7 @@
           "text": "={{ (() => { if (typeof $json.precomputed_response === 'string' && $json.precomputed_response.trim()) { return '[FINAL_ANSWER]\\n' + $json.precomputed_response.trim(); } const msgs = Array.isArray($json.body?.messages) ? $json.body.messages : (Array.isArray($json.messages) ? $json.messages : []); if (msgs.length) { return msgs.map((m) => { const role = String(m?.role || 'user'); const content = Array.isArray(m?.content) ? m.content.map((part) => { if (!part) return ''; if (typeof part === 'string') return part; const t = String(part.type || '').toLowerCase(); if (t === 'text' || t === 'input_text') return String(part.text || part.content || ''); return ''; }).filter(Boolean).join(' ') : (typeof m?.content === 'string' ? m.content : ''); return `[${role}] ${String(content || '').trim()}`.trim(); }).filter(Boolean).join('\\n'); } return String($json.body?.text || $json.text || $json.body?.prompt || $json.prompt || $json.body?.input || $json.input || ''); })() }}",
           "hasOutputParser": false,
           "options": {
-            "systemMessage": "={{ (() => { const body = ($json && $json.body && typeof $json.body === 'object') ? $json.body : {}; const userName = (typeof body.userName === 'string' ? body.userName.trim() : ''); const userEmail = (typeof body.userEmail === 'string' ? body.userEmail.trim() : ''); const base = 'Je bent de GovChat Orchestrator voor overheidscommunicatie. Gebruik de beschikbare tool wanneer de gebruiker vraagt om versimpelen naar B1 (of vergelijkbare verzoeken zoals vereenvoudigen/herformuleren op taalniveau). Gebruik de afbeelding-tool wanneer de gebruiker expliciet vraagt om een afbeelding/generatie van beeldmateriaal. Gebruik voor overige vragen je eigen redeneervermogen en geef een direct antwoord. Houd antwoorden feitelijk en voeg geen ongefundeerde informatie toe. Als de afbeelding-tool output markdown bevat (bijv. ![...](...)), geef exact die markdown terug als eindantwoord zonder extra tekst. Als de input begint met [FINAL_ANSWER], geef exact alles ná dit label terug als eindantwoord zonder extra tekst.'; const context = []; if (userName) context.push('naam: ' + userName); if (userEmail) context.push('e-mailadres: ' + userEmail); if (!context.length) return base; return base + ' Context huidige gebruiker: ' + context.join(', ') + '. Gebruik deze context alleen wanneer relevant voor het antwoord en noem persoonsgegevens alleen als dat functioneel nodig is.'; })() }}",
+            "systemMessage": "={{ (() => {\n  const body = ($json && $json.body && typeof $json.body === 'object') ? $json.body : {};\n  const userName = typeof body.userName === 'string' ? body.userName.trim() : '';\n  const userEmail = typeof body.userEmail === 'string' ? body.userEmail.trim() : '';\n  const streamId = String($json.body?.streamId || $json.streamId || '');\n  const marker = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(streamId) ? '\\n[govchat-stream-id:' + streamId + ']' : '';\n  const base = 'Je bent de GovChat Orchestrator voor overheidscommunicatie. Gebruik de beschikbare tool wanneer de gebruiker vraagt om versimpelen naar B1 (of vergelijkbare verzoeken zoals vereenvoudigen/herformuleren op taalniveau). Gebruik de afbeelding-tool wanneer de gebruiker expliciet vraagt om een afbeelding/generatie van beeldmateriaal. Gebruik de openbesluitvorming_search_tool wanneer de gebruiker vraagt naar openbare besluitvorming, raadsstukken, agenda\\'s, vergaderingen, moties, besluiten of documenten. Bij politiek gevoelige vragen moet je de tool gebruiken voordat je antwoordt. Presenteer relevante bronverwijzingen uit de tool-output, maak duidelijk dat de zoekdekking geen volledigheidsgarantie is en verzin geen feiten buiten de gevonden primaire bronnen. Gebruik voor overige vragen je eigen redeneervermogen en geef een direct antwoord. Houd antwoorden feitelijk en voeg geen ongefundeerde informatie toe. Als de afbeelding-tool output markdown bevat (bijv. ![...](...)), geef exact die markdown terug als eindantwoord zonder extra tekst. Als de input begint met [FINAL_ANSWER], geef exact alles ná dit label terug als eindantwoord zonder extra tekst.';\n  const context = [];\n  if (userName) context.push('naam: ' + userName);\n  if (userEmail) context.push('e-mailadres: ' + userEmail);\n  if (!context.length) return base + marker;\n  return base + ' Context huidige gebruiker: ' + context.join(', ') + '. Gebruik deze context alleen wanneer relevant voor het antwoord en noem persoonsgegevens alleen als dat functioneel nodig is.' + marker;\n})() }}",
             "enableStreaming": true,
             "maxIterations": 8
           }
@@ -117,6 +117,26 @@
           -340,
           340
         ]
+      },
+      {
+        "parameters": {
+          "description": "Zoek met hoge recall in OpenBesluitvorming voor openbare besluitvorming, documenten, vergaderingen, moties en besluiten. Gebruik deze tool altijd bij politiek gevoelige of feitelijke vragen over zulke bronnen. Input: query; optioneel source_key, collection, candidate_limit (50-500), rerank_limit (20-200), result_limit (10-100), include_content. The workflow reranks every fused document up to 500; if candidate_pool.excluded_from_rerank exists, state that the candidate boundary was reached and do not represent the result set as complete. Citeer source.original_url, source.download_url of source.pdf_url in je antwoord. De coverage_notice in de output is verplicht te respecteren.",
+          "source": "database",
+          "workflowId": {
+            "__rl": true,
+            "mode": "list",
+            "value": "govchat-openbesluitvorming-search",
+            "cachedResultName": "OpenBesluitvorming - High Recall Search"
+          }
+        },
+        "id": "ToolOpenBesluitvormingSearch",
+        "name": "openbesluitvorming_search_tool",
+        "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+        "typeVersion": 2.2,
+        "position": [
+          -340,
+          520
+        ]
       }
     ],
     "connections": {
@@ -178,6 +198,17 @@
       "AI Agent Orchestrator": {
         "main": [
           []
+        ]
+      },
+      "openbesluitvorming_search_tool": {
+        "ai_tool": [
+          [
+            {
+              "node": "AI Agent Orchestrator",
+              "type": "ai_tool",
+              "index": 0
+            }
+          ]
         ]
       }
     },
