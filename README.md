@@ -11,13 +11,35 @@
 - Bekende beperkingen: onderdelen kunnen incompleet, experimenteel of omgeving-afhankelijk zijn.
 - Verwachte inzet: inspiratie voor aanbesteding, leveranciersdialoog en doorontwikkeling binnen overheidscontext.
 
-## Huidige scope van deze repository
+## Monorepo-scope en componentgrenzen
 
-Deze stack is in de praktijk breder dan alleen “orchestrator + versimpelaar”. De huidige repository bevat:
+Deze repository is de bron van waarheid voor de deployment en bijbehorende configuratie, n8n-workflows en overlay-integratie. De oorspronkelijke LibreChat-stack blijft op repository-root zodat Compose-entrypoints hun bestaande relatieve paden behouden. De componentgrenzen zijn:
 
-- **LibreChat + GovChat overlay** (help + app launcher) via [`overlay/defaults/loader.js`](overlay/defaults/loader.js) en [`overlay/defaults/apps.json`](overlay/defaults/apps.json).
-- **n8n-gedreven agentarchitectuur** met orchestrator en specialist-workflows, geïmporteerd via [`n8n-bootstrap`](docker-compose.yml:533) en workflowbestanden uit [`GovChat-NL-Agents`](../GovChat-NL-Agents/README.md).
-- **LibreChat ↔ n8n OpenAI bridge** via [`n8n-openai-bridge`](docker-compose.yml:893).
+- **LibreChat deployment en LibreChat-overlay**: [`docker-compose.yml`](docker-compose.yml), [`librechat.yaml`](librechat.yaml), [`nginx/librechat-overlay.conf`](nginx/librechat-overlay.conf), [`overlay/defaults/`](overlay/defaults/) en [`n8n/`](n8n/).
+- **Agent-workflows**: [`agents/n8n/workflows/`](agents/n8n/workflows/); n8n-bootstrap importeert deze bestanden lokaal uit de monorepo.
+- **GovChat Admin-overlay service**: server en beheerinterface in [`services/admin-overlay/admin/`](services/admin-overlay/admin/). Compose mount LibreChat-specifieke defaults uit [`overlay/defaults/`](overlay/defaults/) en neemt dus niet stilzwijgend de Open WebUI-defaults over.
+- **Bridge**: blijft een afzonderlijke repository/service, gekoppeld via een digest-vastgepinde image; alleen stackconfiguratie staat in [`bridge/models.json`](bridge/models.json). Bron: [GovChat-NL/n8n-openai-bridge](https://github.com/GovChat-NL/n8n-openai-bridge).
+
+De request-flow blijft LibreChat → OpenAI-compatibele bridge → n8n webhook → workflow/LiteLLM (rechtstreeks vanuit n8n). Native live tool-cards zijn de bedoelde tool-lifecyclepresentatie, maar de benodigde runtimepatches zitten niet in deze migratiebranch en zijn hier dus nog niet actief. Zie [`docs/live-tool-calling.md`](docs/live-tool-calling.md) en [`docs/monorepo-migration.md`](docs/monorepo-migration.md).
+
+### Snelle start en controles
+
+1. Kopieer `.env.example` naar een lokaal, genegeerd `.env` en vul de omgevingsspecifieke URLs, provider/API-sleutels en sterke willekeurige secrets in. Commit nooit `.env`.
+2. Controleer Compose en de geïmporteerde workflowbestanden:
+
+   ```sh
+   docker compose --env-file .env.example config --quiet
+   node tests/agents/validate-workflows.js
+   node --check n8n/bootstrap.js
+   node --check services/admin-overlay/admin/server.js
+   ```
+
+3. Start met `docker compose --env-file .env up -d`. De standaard Compose gebruikt officiële LibreChat/n8n images, de lokaal beheerde workflowexports en de bridge-digest die hieronder is vastgelegd.
+4. De live orchestrator-/transcriptietests vereisen draaiende services en providerconfiguratie: `node tests/orchestrator/run-validation.js` en `node tests/transcript/run-validation.js`.
+
+De volledige omgevingsvariabelen staan in [`.env.example`](.env.example); de technische migratie- en testmatrix staat in [`docs/monorepo-migration.md`](docs/monorepo-migration.md). Dit blijft een referentie-implementatie, niet een productieklare deployment.
+
+De stack is breder dan alleen “orchestrator + versimpelaar” en bevat onder meer:
 - **Werkende test-apps in de overlay**:
   - Versimpelaar
   - Live transcriptie
@@ -57,9 +79,9 @@ Niet standaard actief:
 
 ## Waarom `pgvector`, `rag-api`, `pgadmin`?
 
-- [`pgvector`](docker-compose.yml:217): PostgreSQL + vector-extensie voor RAG-indexen.
-- [`rag-api`](docker-compose.yml:244): ingest/retrieval service voor document-RAG.
-- [`pgadmin`](docker-compose.yml:332): beheertool voor pgvector DB.
+- `pgvector`: PostgreSQL + vector-extensie voor RAG-indexen, gedefinieerd in [`docker-compose.yml`](docker-compose.yml).
+- `rag-api`: ingest/retrieval service voor document-RAG, gedefinieerd in [`docker-compose.yml`](docker-compose.yml).
+- `pgadmin`: beheertool voor pgvector DB, gedefinieerd in [`docker-compose.yml`](docker-compose.yml).
 
 Als je nu **geen RAG** nodig hebt, hoef je deze services niet te starten.
 
@@ -97,18 +119,19 @@ Aanbevolen push-checklist:
    - `OPENAI_API_KEY`
    - `LITELLM_CONFIG_PATH` (default: `./litellm/config.yaml`)
    - `N8N_OPENAI_BRIDGE_BEARER_TOKEN`
-   - `GOVCHAT_ADMIN_PASSWORD`
-   - `N8N_POSTGRES_PASSWORD`
-   - `N8N_ENCRYPTION_KEY`
-   - `N8N_WEBHOOK_TOKEN`
+    - `GOVCHAT_ADMIN_PASSWORD`
+    - `N8N_POSTGRES_PASSWORD`
+    - `N8N_ENCRYPTION_KEY`
+    - `N8N_BASIC_AUTH_USER` and `N8N_BASIC_AUTH_PASSWORD`
+    - `N8N_WEBHOOK_TOKEN`
    - `N8N_ENABLE_IMAGE_TOOL` (`true`/`false`, default `false`)
    - `N8N_LITELLM_IMAGE_BASE_URL` (default `${LITELLM_URL}`)
    - `N8N_LITELLM_IMAGE_API_KEY` (default `${LITELLM_API_KEY}`)
    - `N8N_LITELLM_IMAGE_MODEL` (default `gpt-image-1`)
    - DB/secrets (`MONGO_ROOT_PASS`, `MEILI_MASTER_KEY`, `JWT_SECRET`, `JWT_REFRESH_SECRET`, `SESSION_SECRET`, `CREDS_KEY`, `CREDS_IV`)
-3. Zorg dat hostmappen uit [`docker-compose.yml`](docker-compose.yml:9) bestaan.
+3. Zorg dat hostmappen uit [`docker-compose.yml`](docker-compose.yml) bestaan.
 4. Standaard wordt [`librechat.yaml`](librechat.yaml) uit de repo gemount. Overschrijven kan met `LIBRECHAT_CONFIG_PATH` in [`.env`](.env).
-5. LiteLLM config-file route staat standaard aan via [`litellm/config.yaml`](litellm/config.yaml) en mount in [`docker-compose.yml`](docker-compose.yml:259).
+5. LiteLLM config-file route staat standaard aan via [`litellm/config.yaml`](litellm/config.yaml) en de mount in [`docker-compose.yml`](docker-compose.yml).
 6. Start:
 
 ```bash
@@ -157,12 +180,14 @@ Alleen als jouw organisatie bewust private GHCR-packages gebruikt: log opnieuw i
 
 De versimpelaar-URL staat standaard op [`/n8n/webhook/versimpelaar`](overlay/defaults/apps.json) en wordt geproxied naar interne n8n.
 
-De **standaard chat** is gekoppeld via [`librechat.yaml`](librechat.yaml) aan [`n8n-openai-bridge/models.json`](n8n-openai-bridge/models.json):
+De **standaard chat** is gekoppeld via [`librechat.yaml`](librechat.yaml) aan [`bridge/models.json`](bridge/models.json):
 
 - custom endpoint `govchat-orchestrator`
 - LibreChat -> `http://n8n-openai-bridge:3333/v1`
 - bridge model `govchat-orchestrator` -> `http://n8n:5678/webhook/orchestrator`
 - bridge-authenticatie via `${N8N_OPENAI_BRIDGE_BEARER_TOKEN}`
+
+De standaardimage is vastgepind op OCI digest `sha256:d61947deaa1b094d03fbdb268fbaf9f35766a792c8776d8014bf7d1188f0232d`; er wordt geen `latest`-tag gebruikt. Het bridge-project en zijn releasecyclus blijven apart: [GovChat-NL/n8n-openai-bridge](https://github.com/GovChat-NL/n8n-openai-bridge). De lokale ontwikkeloverride staat in [`docker-compose.bridge-dev.yml`](docker-compose.bridge-dev.yml) en bouwt alleen wanneer een bridge-checkout naast deze repository staat. Zie de migratiedocumentatie voor de niet-geverifieerde relatie tussen de legacy gepubliceerde artifact en de huidige broncheckout.
 
 ### Context/token usage indicator (default uit)
 
@@ -183,7 +208,7 @@ Reden: de chatflow loopt via n8n-orchestratie en toolcalls. Daardoor kan de UI-i
 Deze route is nu geïmplementeerd en actief in compose:
 
 - Config file: [`litellm/config.yaml`](litellm/config.yaml)
-- Mount + startup flag: [`litellm` service in `docker-compose.yml`](docker-compose.yml:240)
+- Mount + startup flag: de `litellm` service in [`docker-compose.yml`](docker-compose.yml)
 - Env variabele: `LITELLM_CONFIG_PATH` in [`.env.example`](.env.example)
 
 Werkwijze:
@@ -208,8 +233,8 @@ curl ${LITELLM_URL}/v1/models
 Werkwijze:
 1. Voeg model toe in LiteLLM UI (admin).
 2. Open n8n workflow(s):
-   - [`orchestrator-litellm.json`](../GovChat-NL-Agents/n8n/workflows/orchestrator-litellm.json)
-   - [`versimpelaar-litellm.json`](../GovChat-NL-Agents/n8n/workflows/versimpelaar-litellm.json)
+   - [`orchestrator-litellm.json`](agents/n8n/workflows/orchestrator-litellm.json)
+   - [`versimpelaar-litellm.json`](agents/n8n/workflows/versimpelaar-litellm.json)
 3. Kies het gewenste model in `OpenAI Chat Model` node.
 4. Publish workflow opnieuw in n8n.
 5. Verifieer dat het model zichtbaar is op `${LITELLM_URL}/v1/models`.
@@ -230,16 +255,16 @@ De orchestrator kan optioneel een image-tool gebruiken die via LiteLLM naar `/v1
 - `N8N_LITELLM_IMAGE_MODEL`
   - image-model (default: `gpt-image-1`)
 
-Deze waarden worden via compose doorgegeven aan zowel [`n8n`](docker-compose.yml:382) als [`n8n-runners`](docker-compose.yml:461).
+Deze waarden worden via Compose doorgegeven aan zowel `n8n` als `n8n-runners` in [`docker-compose.yml`](docker-compose.yml).
 
 ### Runtime vereisten voor image generation
 
 1. **JS runner modules toegestaan**
    - [`n8n/task-runners.json`](n8n/task-runners.json) zet `NODE_FUNCTION_ALLOW_BUILTIN` op `fs,path,crypto`.
-   - Deze file is gemount in [`n8n-runners`](docker-compose.yml:483).
+   - Deze file is gemount in `n8n-runners` in [`docker-compose.yml`](docker-compose.yml).
 
 2. **Gedeelde image map beschikbaar**
-   - [`/opt/librechat/images:/shared-images`](docker-compose.yml:484) wordt gebruikt om gegenereerde PNG-bestanden op te slaan.
+   - `/opt/librechat/images:/shared-images` wordt gebruikt om gegenereerde PNG-bestanden op te slaan.
    - Bij Linux host-permissieproblemen (`EACCES`) moet de map schrijfbaar zijn voor runner user (uid/gid `1000`).
 
 3. **Publieke URL opbouw**
@@ -343,7 +368,7 @@ Daarnaast zie je nu:
 
 Bootstrap importeert/publisht nu ook:
 
-- [`../GovChat-NL-Agents/n8n/workflows/govcrawler-run.json`](../GovChat-NL-Agents/n8n/workflows/govcrawler-run.json)
+- [`govcrawler-run.json`](agents/n8n/workflows/govcrawler-run.json)
 
 Deze workflow heeft:
 
@@ -387,9 +412,9 @@ Aanbeveling:
 
 ### Bootstrap gedrag
 
-`n8n-bootstrap` gebruikt marker `.govchat-seeded-v5` en importeert de crawler-workflow mee.
+`n8n-bootstrap` gebruikt marker `.govchat-seeded-v5` en voert [`n8n/bootstrap.js`](n8n/bootstrap.js) uit. Het script scant alle top-level `.json`-exports in [`agents/n8n/workflows/`](agents/n8n/workflows/), valideert de bestanden en stabiele IDs, en importeert, verifieert en publiceert de workflows.
 
-Als `AGENTS_WORKFLOW_SOURCE=github` staat en een workflow nog niet in de remote repo staat, valt bootstrap automatisch terug op de lokale Agents-map [`../GovChat-NL-Agents/n8n/workflows`](../GovChat-NL-Agents/n8n/workflows).
+Een nieuwe workflow vereist geen wijziging aan Compose of een aparte bestandslijst. Alleen deploybare workflows horen in deze map: iedere gevonden JSON-export wordt gepubliceerd. Bewaar concepten/drafts elders.
 
 ## n8n beveiliging (from-scratch baseline)
 
@@ -406,14 +431,11 @@ Als `AGENTS_WORKFLOW_SOURCE=github` staat en een workflow nog niet in de remote 
 
 ## Standaard n8n workflows
 
-Bij opstart importeert [`n8n-bootstrap`](docker-compose.yml:394) automatisch workflows uit de aparte agents-repo via GitHub Raw URLs (geen lokale clone nodig).
+Bij opstart voert de [`n8n-bootstrap`-service in Compose](docker-compose.yml) [`n8n/bootstrap.js`](n8n/bootstrap.js) uit om alle JSON-workflows uit [`agents/n8n/workflows/`](agents/n8n/workflows/) te ontdekken en te importeren.
 
-Configuratie in [`.env.example`](.env.example):
+Bootstrapinstellingen in [`.env.example`](.env.example):
 
-- `AGENTS_WORKFLOW_SOURCE` (`github` of `local`)
-- `AGENTS_RAW_BASE_URL` (default: `https://raw.githubusercontent.com/GovChat-NL/GovChat-NL-Agents/main/n8n/workflows`)
-- `AGENTS_WORKFLOW_FILES` (default: `versimpelaar-litellm.json,orchestrator-litellm.json,image-generator-litellm.json,transcriptie-litellm.json,transcriptie-title-litellm.json,govcrawler-run.json`)
-- `AGENTS_LOCAL_WORKFLOWS_DIR` (default: `/workspace/GovChat-NL-Agents/n8n/workflows`)
+- `AGENTS_LOCAL_WORKFLOWS_DIR` (default: `/workspace/agents/n8n/workflows`)
 - `AGENTS_BOOTSTRAP_FORCE` (`false` standaard; zet op `true` om import/publish geforceerd opnieuw uit te voeren)
 - `N8N_OWNER_EMAIL` (optioneel; als gezet wordt owner automatisch geprovisioned)
 - `N8N_OWNER_PASSWORD` (optioneel; samen met `N8N_OWNER_EMAIL`)
@@ -439,37 +461,28 @@ Forceer een nieuwe bootstrap-run met:
 docker compose -f docker-compose.yml --env-file .env up -d --force-recreate n8n-bootstrap
 ```
 
-Bronkeuze:
-
-- `AGENTS_WORKFLOW_SOURCE=github`: bootstrap downloadt workflows vanaf `AGENTS_RAW_BASE_URL`.
-- `AGENTS_WORKFLOW_SOURCE=local`: bootstrap leest workflows direct uit de gemounte lokale agents-repo (`AGENTS_LOCAL_WORKFLOWS_DIR`).
-
-Voor lokaal testen van on-gepushte workflow-wijzigingen zet je dus `AGENTS_WORKFLOW_SOURCE=local` in [`.env`](.env).
+Bootstrap leest workflows direct uit de read-only mount van `./agents`; er is geen remote download of aparte checkout.
 
 Stabiliteit in productie/lokaal:
 
 - Standaard (`AGENTS_BOOTSTRAP_FORCE=false`) slaat bootstrap import/publish over na de eerste succesvolle seed.
 - Hiermee voorkom je dat workflows bij elke herstart onnodig gedeactiveerd/geherpubliceerd worden terwijl verkeer al loopt.
-- Alleen bij echte workflow-wijzigingen tijdelijk `AGENTS_BOOTSTRAP_FORCE=true` zetten, daarna terug naar `false`.
+- Bij toevoegen/wijzigen van workflow JSON: zet tijdelijk `AGENTS_BOOTSTRAP_FORCE=true`, forceer een nieuwe `n8n-bootstrap`-run en zet het daarna terug op `false`.
 
-Standaard workflow-bronnen:
-
-- [`orchestrator-litellm.json`](../GovChat-NL-Agents/n8n/workflows/orchestrator-litellm.json)
-- [`versimpelaar-litellm.json`](../GovChat-NL-Agents/n8n/workflows/versimpelaar-litellm.json)
-- [`image-generator-litellm.json`](../GovChat-NL-Agents/n8n/workflows/image-generator-litellm.json)
+Voorbeelden uit de automatisch ontdekte catalogus zijn [`orchestrator-litellm.json`](agents/n8n/workflows/orchestrator-litellm.json), [`versimpelaar-litellm.json`](agents/n8n/workflows/versimpelaar-litellm.json) en [`image-generator-litellm.json`](agents/n8n/workflows/image-generator-litellm.json).
 
 Bootstrap-flow:
 
-1. Downloadt elk bestand uit `AGENTS_WORKFLOW_FILES` vanaf `AGENTS_RAW_BASE_URL`.
-2. Importeert workflows in n8n met `n8n import:workflow`.
-3. Publiceert workflows met vaste IDs (`govchat-orchestrator-litellm`, `govchat-versimpelaar-b1-litellm`).
+1. Scant en valideert alle top-level `.json`-workflowexports in `AGENTS_LOCAL_WORKFLOWS_DIR`.
+2. Importeert elk exportbestand met `n8n import:workflow`.
+3. Haalt stabiele IDs uit de JSON, verifieert ze met `n8n export:workflow` en publiceert ze met `n8n publish:workflow`.
 
 Architectuurafspraak:
 
 - Alle eindgebruikersverkeer loopt via de orchestrator-agent.
 - Sub-agents (zoals Versimpelaar B1) worden door de orchestrator als tool aangeroepen.
 
-Daarnaast bootstrap't [`n8n-bootstrap`](docker-compose.yml:394) automatisch een n8n credential:
+Daarnaast maakt [`n8n/bootstrap.js`](n8n/bootstrap.js) automatisch een n8n credential aan:
 
 - `openAiApi` met naam `LiteLLM API`
 - `apiKey` = `${LITELLM_API_KEY}`

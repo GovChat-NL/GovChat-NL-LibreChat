@@ -1,4 +1,6 @@
-# Bijdragen aan GovChat-NL-Agents
+# Bijdragen aan GovChat-NL agent-workflows
+
+De workflowbron staat nu in `agents/` van de GovChat-NL-LibreChat-monorepo. Dien workflow- en runtimewijzigingen in via die repository en valideer exports met `node tests/agents/validate-workflows.js`.
 
 ## Ontwerpprincipes
 
@@ -49,7 +51,7 @@ Workflow-`id` is de unieke technische sleutel van een n8n-workflow.
 
 ## Bestandslocatie
 
-- Plaats workflows in `n8n/workflows/`.
+- Plaats deploybare workflow-exports als top-level `.json`-bestanden in `n8n/workflows/`. Bootstrap scant deze map automatisch; ieder gevonden JSON-bestand wordt geïmporteerd en gepubliceerd.
 - Gebruik beschrijvende bestandsnamen, bijvoorbeeld `orchestrator-litellm.json`.
 
 ## Versiebeheer-richtlijn
@@ -59,5 +61,5 @@ Workflow-`id` is de unieke technische sleutel van een n8n-workflow.
 
 ## Opmerking voor lokaal testen
 
-`GovChat-NL-LibreChat` haalt deze workflowbestanden tijdens bootstrap op via GitHub Raw URLs. Na merge: herstart `n8n-bootstrap` in de LibreChat-stack om updates opnieuw te importeren/publiceren.
+De monorepo bootstrap mount deze workflowmap lokaal. Na een workflowwijziging zet je `AGENTS_BOOTSTRAP_FORCE=true` en voer je `n8n-bootstrap` opnieuw uit om de bestaande seed-marker te forceren; zet de variabele daarna terug op `false`.
 

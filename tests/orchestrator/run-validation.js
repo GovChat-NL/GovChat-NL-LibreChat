@@ -41,7 +41,7 @@ function toDataUrl(filePath) {
 function resolveImagePath(inputPath) {
   const candidates = [
     inputPath,
-    'GovChat-NL-LibreChat/tests/fixtures/number-grid.png',
+    path.resolve(__dirname, '../fixtures/number-grid.png'),
     'tmp-validation/number-grid.png',
     'number-grid.png',
   ].filter(Boolean);
@@ -193,7 +193,7 @@ async function run() {
   const token = getArg('--token', process.env.N8N_WEBHOOK_TOKEN || 'local_n8n_webhook_token_change_me');
   const expectedDigit = getArg('--expect', '7');
   const onlyText = hasArg('--only-text');
-  const imagePathRaw = getArg('--image', 'GovChat-NL-LibreChat/tests/fixtures/number-grid.png');
+  const imagePathRaw = getArg('--image', path.resolve(__dirname, '../fixtures/number-grid.png'));
   const imagePath = resolveImagePath(imagePathRaw);
 
   printHeader('GovChat Orchestrator Validation Suite');

@@ -1,5 +1,8 @@
 # GovChat-NL Overlay voor Open WebUI
 
+> [!IMPORTANT]
+> **Monorepo-integratie:** de GovChat-NL LibreChat deployment bouwt uitsluitend [`admin/`](admin/) uit deze component (`services/admin-overlay/admin`). De servicecode, beheerschermen en API-functies worden gebruikt door de LibreChat-stack. De Open WebUI-gerichte root-level loader/assets/configuratie en [`admin/defaults/`](admin/defaults/) zijn historische/standalone Open WebUI-defaults en worden niet gemount door de LibreChat Compose-service. LibreChat-defaults zijn eigendom van [`../../overlay/defaults/`](../../overlay/defaults/). Gebruik de Open WebUI Compose quickstart hieronder niet om de LibreChat-stack te starten.
+
 > [!WARNING]
 > **Status: niet productierijp / niet gegarandeerd werkend.**
 > Deze repository wordt gedeeld als **inspiratie en referentie-implementatie** voor leveranciers en mede-overheden.
