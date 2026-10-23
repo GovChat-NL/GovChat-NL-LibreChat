@@ -153,7 +153,7 @@
         "workflowId": {
           "__rl": true,
           "mode": "list",
-          "value": "govchat-openbesluitvorming-document-worker",
+          "value": "govchat-ob-document-worker",
           "cachedResultName": "OpenBesluitvorming - Document Worker"
         },
         "options": {

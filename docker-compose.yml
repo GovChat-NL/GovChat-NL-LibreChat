@@ -561,7 +561,7 @@ services:
       N8N_OWNER_ENFORCE: ${N8N_OWNER_ENFORCE:-true}
       LITELLM_URL: ${LITELLM_URL}
       LITELLM_API_KEY: ${LITELLM_API_KEY}
-      AGENTS_LOCAL_WORKFLOWS_DIR: ${AGENTS_LOCAL_WORKFLOWS_DIR:-/workspace/agents/n8n/workflows}
+      AGENTS_LOCAL_WORKFLOWS_DIR: /workspace/agents/n8n/workflows
       AGENTS_BOOTSTRAP_FORCE: ${AGENTS_BOOTSTRAP_FORCE:-false}
     volumes:
       - n8n-data:/home/node/.n8n

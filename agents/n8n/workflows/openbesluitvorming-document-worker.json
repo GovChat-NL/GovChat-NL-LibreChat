@@ -1,5 +1,5 @@
 {
-  "id": "govchat-openbesluitvorming-document-worker",
+  "id": "govchat-ob-document-worker",
   "name": "OpenBesluitvorming - Document Worker",
   "description": "Full-document Open Besluitvorming worker. It persists available source metadata, uses bounded embedding batches and weighted mean pooling, and records individual dead letters.",
   "active": false,
