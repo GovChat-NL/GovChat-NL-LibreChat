@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Apps bewerken - GovChat Admin</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f1f5f9; color: #1e293b; }
+  .navbar { background: #1a365d; padding: 0 1.5rem; height: 56px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
+  .nav-brand { display: flex; align-items: center; gap: 0.625rem; }
+  .nav-brand svg { width: 30px; height: 30px; }
+  .nav-brand-text { font-size: 0.9375rem; font-weight: 700; color: #fff; }
+  .nav-brand-text .nl { color: #e65100; }
+  .nav-links { display: flex; gap: 0.25rem; align-items: center; }
+  .nav-links a { color: rgba(255,255,255,0.7); text-decoration: none; font-size: 0.8rem; font-weight: 500; padding: 0.375rem 0.75rem; border-radius: 6px; transition: all 0.15s; }
+  .nav-links a:hover { color: #fff; background: rgba(255,255,255,0.1); }
+  .nav-links .active { color: #fff; background: rgba(255,255,255,0.12); }
+  .breadcrumb { max-width: 1000px; margin: 1rem auto 0; padding: 0 1rem; font-size: 0.75rem; color: #94a3b8; }
+  .breadcrumb a { color: #64748b; text-decoration: none; }
+  .breadcrumb a:hover { color: #1a365d; }
+  .breadcrumb span { margin: 0 0.375rem; }
+  .container { max-width: 1000px; margin: 0.75rem auto 2rem; padding: 0 1rem; }
+  .form-group { margin-bottom: 0.75rem; }
+  label { display: block; font-size: 0.75rem; font-weight: 600; color: #475569; margin-bottom: 0.375rem; text-transform: uppercase; letter-spacing: 0.04em; }
+  input[type="text"], select { width: 100%; padding: 0.5rem 0.75rem; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 0.8125rem; font-family: inherit; outline: none; transition: all 0.15s; background: #fff; }
+  input[type="text"]:focus, select:focus { border-color: #1a365d; box-shadow: 0 0 0 3px rgba(26,54,93,0.08); }
+  .card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); padding: 1.5rem; margin-bottom: 1rem; border: 1px solid #e2e8f0; }
+  .card h2 { font-size: 1rem; color: #1a365d; font-weight: 700; }
+  .app-card { background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 1rem; margin-bottom: 0.75rem; transition: border-color 0.15s; }
+  .app-card:hover { border-color: #cbd5e1; }
+  .app-header { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; }
+  .app-header .drag-handle { cursor: grab; color: #cbd5e1; display: flex; align-items: center; padding: 0.125rem; border-radius: 4px; transition: color 0.15s; }
+  .app-header .drag-handle:hover { color: #64748b; }
+  .app-header .drag-handle svg { width: 16px; height: 16px; }
+  .app-header .app-title-text { font-weight: 600; font-size: 0.875rem; flex: 1; color: #334155; }
+  .app-num { font-size: 0.6875rem; font-weight: 700; color: #94a3b8; background: #f1f5f9; border: 1px solid #e2e8f0; padding: 0.125rem 0.5rem; border-radius: 4px; }
+  .btn { display: inline-flex; align-items: center; gap: 0.375rem; padding: 0.4375rem 0.875rem; border: none; border-radius: 7px; font-size: 0.8rem; font-weight: 600; cursor: pointer; transition: all 0.15s; }
+  .btn svg { width: 14px; height: 14px; }
+  .btn-primary { background: #1a365d; color: #fff; }
+  .btn-primary:hover { background: #e65100; }
+  .btn-secondary { background: #f1f5f9; color: #475569; border: 1.5px solid #e2e8f0; }
+  .btn-secondary:hover { background: #e2e8f0; border-color: #cbd5e1; }
+  .btn-danger { background: #fff; color: #dc2626; border: 1.5px solid #fecaca; }
+  .btn-danger:hover { background: #fef2f2; border-color: #fca5a5; }
+  .btn-sm { padding: 0.25rem 0.5rem; font-size: 0.75rem; }
+  .top-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
+  .toast { position: fixed; bottom: 1.5rem; right: 1.5rem; padding: 0.75rem 1.25rem; border-radius: 8px; font-size: 0.8125rem; font-weight: 500; color: #fff; z-index: 9999; transition: opacity 0.3s; display: flex; align-items: center; gap: 0.5rem; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+  .toast-success { background: #16a34a; }
+  .toast-error { background: #dc2626; }
+  .inline-row { display: flex; gap: 0.5rem; }
+  .inline-row .form-group { flex: 1; }
+  .emoji-btn { width: 44px; height: 36px; border: 1.5px solid #e2e8f0; border-radius: 8px; background: #fff; font-size: 1.25rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; position: relative; }
+  .emoji-btn:hover { border-color: #1a365d; background: #f8fafc; }
+  .emoji-btn .emoji-placeholder { font-size: 0.7rem; color: #94a3b8; }
+  .emoji-picker { display: none; position: absolute; top: 100%; left: 0; z-index: 100; background: #fff; border: 1.5px solid #e2e8f0; border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.12); padding: 0.5rem; width: 280px; margin-top: 4px; }
+  .emoji-picker.open { display: block; }
+  .emoji-picker-search { width: 100%; padding: 0.375rem 0.625rem; border: 1.5px solid #e2e8f0; border-radius: 6px; font-size: 0.75rem; outline: none; margin-bottom: 0.375rem; }
+  .emoji-picker-search:focus { border-color: #1a365d; }
+  .emoji-cat { font-size: 0.625rem; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.06em; padding: 0.25rem 0.125rem 0.125rem; }
+  .emoji-grid { display: flex; flex-wrap: wrap; gap: 2px; max-height: 200px; overflow-y: auto; }
+  .emoji-opt { width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border: none; background: transparent; border-radius: 6px; font-size: 1.125rem; cursor: pointer; transition: background 0.1s; }
+  .emoji-opt:hover { background: #f1f5f9; }
+  .config-section { background: #fff; border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 0.75rem; margin-top: 0.75rem; }
+  .config-label { font-size: 0.6875rem; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.375rem; }
+  .config-label svg { width: 14px; height: 14px; color: #94a3b8; }
+  .help-text { font-size: 0.6875rem; color: #94a3b8; margin-top: 0.125rem; }
+  .toggle-label { display: flex; align-items: center; gap: 0.625rem; cursor: pointer; user-select: none; }
+  .toggle-text { font-size: 0.8125rem; font-weight: 600; color: #334155; white-space: nowrap; }
+  .toggle-label input { display: none; }
+  .toggle-switch { width: 40px; height: 22px; background: #cbd5e1; border-radius: 11px; position: relative; transition: background 0.2s; flex-shrink: 0; }
+  .toggle-switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; background: #fff; border-radius: 50%; transition: transform 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.15); }
+  .toggle-label input:checked + .toggle-switch { background: #16a34a; }
+  .toggle-label input:checked + .toggle-switch::after { transform: translateX(18px); }
+  .target-badge { font-size: 0.6875rem; padding: 0.125rem 0.5rem; border-radius: 4px; font-weight: 600; }
+  .target-navigate { background: #dbeafe; color: #1e40af; }
+  .target-blank { background: #f0fdf4; color: #166534; }
+  .target-iframe { background: #fef3c7; color: #92400e; }
+  .target-versimpelaar { background: #fce7f3; color: #9d174d; }
+  .target-transcriptie { background: #ede9fe; color: #5b21b6; }
+  .target-beleidskompas { background: #e0f2fe; color: #075985; }
+</style>
+</head>
+<body>
+<nav class="navbar">
+  <div class="nav-brand">
+    <svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="60" cy="56" r="48" fill="#243f6b"/>
+      <line x1="25" y1="35" x2="45" y2="50" stroke="#3a6a9e" stroke-width="1.5" opacity="0.5"/>
+      <line x1="75" y1="50" x2="95" y2="35" stroke="#3a6a9e" stroke-width="1.5" opacity="0.5"/>
+      <circle cx="25" cy="35" r="3" fill="#3a6a9e" opacity="0.5"/>
+      <circle cx="95" cy="35" r="3" fill="#3a6a9e" opacity="0.5"/>
+      <line x1="35" y1="25" x2="85" y2="65" stroke="#e65100" stroke-width="7" stroke-linecap="round"/>
+      <line x1="85" y1="25" x2="35" y2="65" stroke="#e65100" stroke-width="7" stroke-linecap="round"/>
+      <path d="M52,52 L48,82 Q48,88 60,88 Q72,88 72,82 L68,52 Z" fill="#f0ece4"/>
+      <path d="M56,62 L58,56 L62,56 L64,62 Z" fill="#1a365d" opacity="0.6"/>
+      <circle cx="60" cy="46" r="5" fill="#e65100"/>
+      <circle cx="60" cy="46" r="2.5" fill="#c44000"/>
+      <polygon points="50,100 60,104 55,90" fill="#243f6b"/>
+    </svg>
+    <span class="nav-brand-text">GovChat-<span class="nl">NL</span> Admin</span>
+  </div>
+  <div class="nav-links">
+    <a href="/dashboard">Dashboard</a>
+    <a href="/help-editor">Handleiding</a>
+    <a href="/apps-editor" class="active">Apps</a>
+    <a href="/crawler-editor">Crawler</a>
+    <a href="/orchestrator-editor">Orchestrator</a>
+    <a href="/beleidskompas-editor">Beleidskompas</a>
+    <a href="/logout">Uitloggen</a>
+  </div>
+</nav>
+<div class="breadcrumb"><a href="/dashboard">Dashboard</a> <span>/</span> Apps bewerken</div>
+<div class="container">
+  <div class="card">
+    <div class="top-bar">
+      <h2>App Launcher</h2>
+      <button class="btn btn-primary" onclick="save()">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/></svg>
+        Opslaan
+      </button>
+    </div>
+    <div class="inline-row" style="align-items:center; gap:1rem;">
+      <div class="form-group" style="flex:1;">
+        <label for="apps-title">Titel</label>
+        <input type="text" id="apps-title" placeholder="App Launcher">
+      </div>
+      <div class="form-group" style="flex:0 0 auto; padding-top:0.5rem;">
+        <label class="toggle-label">
+          <span class="toggle-text">App Launcher actief</span>
+          <input type="checkbox" id="apps-enabled" onchange="data.enabled = this.checked">
+          <span class="toggle-switch"></span>
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="top-bar">
+      <h2>Apps</h2>
+      <button class="btn btn-secondary" onclick="addApp()">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+        App toevoegen
+      </button>
+    </div>
+    <div id="apps-list"></div>
+  </div>
+
+  <div style="text-align: right; margin-bottom: 2rem;">
+    <button class="btn btn-primary" onclick="save()">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/></svg>
+      Opslaan
+    </button>
+  </div>
+</div>
+
+<script>
+let data = {{jsonData}};
+
+const DRAG_ICON = '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 9h16.5m-16.5 6.75h16.5"/></svg>';
+
+// ── Emoji Picker ──────────────────────────────────────────────────
+
+const EMOJI_SETS = {
+  "Algemeen": ["📋","📄","📝","📖","📚","📑","📌","📎","💡","🔍","⚙️","🛠️","🔧","🔒","🔓","✅","❌","⚠️","ℹ️","❓"],
+  "Communicatie": ["💬","💭","📢","📣","✉️","📧","📨","🔔","🔕","📞","📱","💻","🖥️","🌐","🔗","📡","📲","🗣️","👥","🏛️"],
+  "Overheid": ["🏛️","⚖️","📜","🗳️","🏢","🏗️","🚸","♿","🌿","🌍","🤝","👨‍💼","👩‍💼","🎯","📊","📈","💰","🗂️","📁","🏠"],
+  "Acties": ["✏️","🖊️","🗑️","📥","📤","🔄","▶️","⏸️","⏹️","🚀","💾","🔎","➕","➖","⬆️","⬇️","↗️","🆕","✨","🔤"],
+  "Smileys": ["😊","👍","👎","👋","🙌","💪","🎉","⭐","❤️","🔥","💯","🏆","🎯","🤖","🧑‍💻","📐","🧩","🎨","🔐","🛡️"],
+};
+
+let activePickerId = null;
+
+function emojiButtonHTML(id, currentEmoji) {
+  const display = currentEmoji || '<span class="emoji-placeholder">+</span>';
+  return '<div style="position:relative;">' +
+    '<button type="button" class="emoji-btn" id="ebtn-' + id + '" onclick="toggleEmojiPicker(\'' + id + '\')">' + display + '</button>' +
+    '<div class="emoji-picker" id="epick-' + id + '">' +
+      '<input type="text" class="emoji-picker-search" placeholder="Zoeken..." oninput="filterEmojis(\'' + id + '\', this.value)">' +
+      '<div class="emoji-grid" id="egrid-' + id + '"></div>' +
+    '</div></div>';
+}
+
+function toggleEmojiPicker(id) {
+  const picker = document.getElementById("epick-" + id);
+  if (activePickerId && activePickerId !== id) {
+    document.getElementById("epick-" + activePickerId)?.classList.remove("open");
+  }
+  const isOpen = picker.classList.toggle("open");
+  activePickerId = isOpen ? id : null;
+  if (isOpen) {
+    renderEmojiGrid(id, "");
+    const search = picker.querySelector(".emoji-picker-search");
+    search.value = "";
+    setTimeout(() => search.focus(), 50);
+  }
+}
+
+function renderEmojiGrid(id, filter) {
+  const grid = document.getElementById("egrid-" + id);
+  let html = "";
+  const f = filter.toLowerCase();
+  for (const [cat, emojis] of Object.entries(EMOJI_SETS)) {
+    const filtered = f ? emojis.filter(e => e.includes(f)) : emojis;
+    if (filtered.length === 0) continue;
+    if (!f) html += '<div class="emoji-cat">' + escHTML(cat) + '</div>';
+    filtered.forEach(e => {
+      html += '<button type="button" class="emoji-opt" onclick="selectEmoji(\'' + id + '\',\'' + e + '\')">' + e + '</button>';
+    });
+  }
+  if (!html) html = '<div style="padding:0.5rem;font-size:0.75rem;color:#94a3b8;">Geen resultaten</div>';
+  grid.innerHTML = html;
+}
+
+function filterEmojis(id, query) { renderEmojiGrid(id, query); }
+
+function selectEmoji(id, emoji) {
+  const parts = id.split("-");
+  if (parts[0] === "app") {
+    const ai = parseInt(parts[1]);
+    data.apps[ai].icon = emoji;
+    renderApps();
+  }
+  activePickerId = null;
+}
+
+document.addEventListener("click", (e) => {
+  if (activePickerId && !e.target.closest(".emoji-picker") && !e.target.closest(".emoji-btn")) {
+    document.getElementById("epick-" + activePickerId)?.classList.remove("open");
+    activePickerId = null;
+  }
+});
+
+const TARGET_TYPES = [
+  { value: "navigate", label: "Navigeer (zelfde pagina)" },
+  { value: "blank", label: "Nieuw tabblad" },
+  { value: "iframe", label: "Iframe viewer" },
+  { value: "versimpelaar", label: "Versimpelaar" },
+  { value: "transcriptie", label: "Live transcriptie" },
+  { value: "beleidskompas", label: "Beleidskompas" },
+];
+
+const TARGET_BADGES = {
+  navigate: "target-navigate",
+  blank: "target-blank",
+  iframe: "target-iframe",
+  versimpelaar: "target-versimpelaar",
+  transcriptie: "target-transcriptie",
+  beleidskompas: "target-beleidskompas",
+};
+
+function render() {
+  document.getElementById("apps-title").value = data.title || "";
+  document.getElementById("apps-enabled").checked = data.enabled !== false;
+  renderApps();
+}
+
+function renderApps() {
+  const container = document.getElementById("apps-list");
+  container.innerHTML = "";
+  if (!data.apps) data.apps = [];
+  data.apps.forEach((app, ai) => {
+    const div = document.createElement("div");
+    div.className = "app-card";
+    div.draggable = true;
+    div.dataset.index = ai;
+    div.addEventListener("dragstart", (e) => { e.dataTransfer.setData("text/plain", ai); div.style.opacity = "0.4"; });
+    div.addEventListener("dragend", () => { div.style.opacity = "1"; });
+    div.addEventListener("dragover", (e) => e.preventDefault());
+    div.addEventListener("drop", (e) => {
+      e.preventDefault();
+      const from = parseInt(e.dataTransfer.getData("text/plain"));
+      const to = ai;
+      if (from !== to) { const item = data.apps.splice(from, 1)[0]; data.apps.splice(to, 0, item); renderApps(); }
+    });
+
+    const targetOptions = TARGET_TYPES.map(t =>
+      `<option value="${t.value}" ${app.target === t.value ? "selected" : ""}>${t.label}</option>`
+    ).join("");
+
+    const badgeClass = TARGET_BADGES[app.target] || "target-blank";
+    const badgeLabel = TARGET_TYPES.find(t => t.value === app.target)?.label || app.target;
+
+    let configHTML = "";
+    if (app.target === "versimpelaar") {
+      const levels = app.config?.language_levels || ["B1", "B2"];
+      const defaultLevel = app.config?.default_level || "B1";
+      configHTML = `
+        <div class="config-section">
+          <div class="config-label">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 1 1-3 0m3 0a1.5 1.5 0 1 0-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-9.75 0h9.75"/></svg>
+            Versimpelaar instellingen
+          </div>
+          <div class="inline-row">
+            <div class="form-group">
+              <label>Taalniveaus (komma-gescheiden)</label>
+              <input type="text" value="${escAttr(levels.join(", "))}" onchange="updateConfig(${ai}, 'language_levels', this.value)">
+              <div class="help-text">Bijv: B1, B2</div>
+            </div>
+            <div class="form-group" style="flex:0 0 140px;">
+              <label>Standaard niveau</label>
+              <input type="text" value="${escAttr(defaultLevel)}" onchange="updateConfig(${ai}, 'default_level', this.value)">
+            </div>
+          </div>
+        </div>`;
+    } else if (app.target === "transcriptie") {
+      const cfg = app.config || {};
+      const webhookToken = cfg.webhook_token || "";
+      const chunkMs = Number(cfg.chunk_ms || 5000);
+      const chunkMinMs = Number(cfg.chunk_min_ms || 2200);
+      const chunkMaxMs = Number(cfg.chunk_max_ms || 12000);
+      const vadSilenceMs = Number(cfg.vad_silence_ms || 900);
+      const vadThreshold = Number(cfg.vad_threshold || 0.012);
+      const silenceThreshold = Number(cfg.silence_threshold ?? cfg.vad_threshold ?? 0.012);
+      const overlapMs = Number(cfg.overlap_ms || 650);
+      const contextPrompt = cfg.context_prompt || "Nederlands gesprek, maak een complete en nette transcriptie.";
+      const maxDuration = Number(cfg.max_duration_minutes || 120);
+      const model = cfg.litellm_model || "gpt-4o-transcribe";
+      const language = cfg.language || "nl";
+      const enableSpeakerLabels = cfg.enable_speaker_labels !== false;
+      const includeTimestamps = cfg.include_timestamps !== false;
+      configHTML = `
+        <div class="config-section">
+          <div class="config-label">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 18.75a6 6 0 0 0 5.878-4.788M12 18.75a6 6 0 0 1-5.878-4.788M12 18.75V21m-7.5-9.75h15m-15 0a7.5 7.5 0 0 1 15 0m-15 0a7.5 7.5 0 0 0 15 0m-15 0V9a7.5 7.5 0 0 1 15 0v2.25"/></svg>
+            Transcriptie instellingen
+          </div>
+          <div class="form-group">
+            <label>Webhook token</label>
+            <input type="text" value="${escAttr(webhookToken)}" onchange="updateConfig(${ai}, 'webhook_token', this.value)">
+            <div class="help-text"><strong>Doel:</strong> Beveiliging op de webhook.<br><strong>Waarde:</strong> vrije tekst/token.<br><strong>Advies:</strong> altijd invullen in productie.<br><strong>Voordeel hoog/ingevuld:</strong> veiliger endpoint.<br><strong>Nadeel:</strong> fout token = geen transcriptie.</div>
+          </div>
+          <div class="inline-row">
+            <div class="form-group">
+              <label>LiteLLM model</label>
+              <input type="text" value="${escAttr(model)}" onchange="updateConfig(${ai}, 'litellm_model', this.value)">
+              <div class="help-text"><strong>Doel:</strong> model-alias in LiteLLM (bijv. <code>gpt-4o-transcribe</code>).<br><strong>Waarde:</strong> tekst/aliasnaam.<br><strong>Advies:</strong> gebruik alleen een alias die in LiteLLM bestaat.<br><strong>Nadeel fout alias:</strong> 4xx/5xx modelfout.</div>
+            </div>
+            <div class="form-group" style="flex:0 0 120px;">
+              <label>Taal</label>
+              <input type="text" value="${escAttr(language)}" onchange="updateConfig(${ai}, 'language', this.value)">
+              <div class="help-text"><strong>Doel:</strong> taalhint voor transcriptie (ISO-code, bijv. <code>nl</code>).<br><strong>Voordeel juiste taal:</strong> betere herkenning.<br><strong>Nadeel verkeerde taal:</strong> meer fouten bij snelle spraak.</div>
+            </div>
+          </div>
+          <div class="inline-row">
+            <div class="form-group" style="flex:0 0 170px;">
+              <label>Chunk interval (ms)</label>
+              <input type="text" value="${escAttr(String(chunkMs))}" onchange="updateConfig(${ai}, 'chunk_ms', this.value)">
+              <div class="help-text"><strong>Doel:</strong> fallback vaste chunking (legacy).<br><strong>Range:</strong> 2000–15000 ms.<br><strong>Lager:</strong> sneller resultaat, meer requests, kans op contextverlies.<br><strong>Hoger:</strong> minder requests, stabieler context, maar meer vertraging.</div>
+            </div>
+            <div class="form-group" style="flex:0 0 170px;">
+              <label>Max duur (min)</label>
+              <input type="text" value="${escAttr(String(maxDuration))}" onchange="updateConfig(${ai}, 'max_duration_minutes', this.value)">
+              <div class="help-text"><strong>Doel:</strong> veiligheidslimiet van een sessie.<br><strong>Range:</strong> 5–360 min.<br><strong>Lager:</strong> minder risico op runaway sessies.<br><strong>Hoger:</strong> langere vergaderingen mogelijk.</div>
+            </div>
+          </div>
+          <div class="inline-row">
+            <div class="form-group" style="flex:0 0 170px;">
+              <label>Chunk min (ms)</label>
+              <input type="text" value="${escAttr(String(chunkMinMs))}" onchange="updateConfig(${ai}, 'chunk_min_ms', this.value)">
+              <div class="help-text"><strong>Doel:</strong> minimale chunkduur vóór een knip mag plaatsvinden.<br><strong>Range:</strong> 1200–10000 ms.<br><strong>Lager:</strong> sneller reageren op korte pauzes; meer fragmentatie.<br><strong>Hoger:</strong> natuurlijkere zinnen; iets meer latency.</div>
+            </div>
+            <div class="form-group" style="flex:0 0 170px;">
+              <label>Chunk max (ms)</label>
+              <input type="text" value="${escAttr(String(chunkMaxMs))}" onchange="updateConfig(${ai}, 'chunk_max_ms', this.value)">
+              <div class="help-text"><strong>Doel:</strong> harde knip als er geen stilte valt.<br><strong>Range:</strong> min+800 tot 30000 ms.<br><strong>Lager:</strong> sneller updates; meer kans op midden-in-zin knip.<br><strong>Hoger:</strong> betere volledigheid bij snel spreken; tragere updates.</div>
+            </div>
+          </div>
+          <div class="inline-row">
+            <div class="form-group" style="flex:0 0 170px;">
+              <label>VAD stilte (ms)</label>
+              <input type="text" value="${escAttr(String(vadSilenceMs))}" onchange="updateConfig(${ai}, 'vad_silence_ms', this.value)">
+              <div class="help-text"><strong>Doel:</strong> hoe lang stilte moet duren voor knip.<br><strong>Range:</strong> 350–3000 ms.<br><strong>Lager:</strong> snelle knip na korte pauzes; risico op te vaak knippen.<br><strong>Hoger:</strong> stabielere zinsblokken; meer vertraging.</div>
+            </div>
+            <div class="form-group" style="flex:0 0 170px;">
+              <label>VAD drempel</label>
+              <input type="text" value="${escAttr(String(vadThreshold))}" onchange="updateConfig(${ai}, 'vad_threshold', this.value)">
+              <div class="help-text"><strong>Doel:</strong> compatibiliteitsdrempel voor VAD (oude sleutel).<br><strong>Range:</strong> 0.002–0.08 (unitless RMS).<br><strong>Lager:</strong> gevoeliger (pakt zachte spraak), meer ruisgevoelig.<br><strong>Hoger:</strong> minder ruis, maar kan zachte spraak missen.</div>
+            </div>
+            <div class="form-group" style="flex:0 0 170px;">
+              <label>Silence threshold (RMS, unitless)</label>
+              <input type="text" value="${escAttr(String(silenceThreshold))}" onchange="updateConfig(${ai}, 'silence_threshold', this.value)">
+              <div class="help-text">Eenheid: RMS-amplitude zonder unit (0–1). Praktisch bereik: 0.002–0.08. Lager = gevoeliger (sneller spraak), hoger = strenger (meer stilte nodig).</div>
+            </div>
+            <div class="form-group" style="flex:0 0 170px;">
+              <label>Overlap (ms)</label>
+              <input type="text" value="${escAttr(String(overlapMs))}" onchange="updateConfig(${ai}, 'overlap_ms', this.value)">
+              <div class="help-text"><strong>Doel:</strong> configuratie voor overlapstrategie in de client.<br><strong>Range:</strong> 0–2500 ms.<br><strong>Lager:</strong> minder duplicaatkans, maar minder contextbuffer.<br><strong>Hoger:</strong> potentieel betere continuïteit, maar ook meer overlap/duplicatie-risico.</div>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Context prompt</label>
+            <input type="text" value="${escAttr(contextPrompt)}" onchange="updateConfig(${ai}, 'context_prompt', this.value)">
+            <div class="help-text"><strong>Doel:</strong> extra instructie/context die per chunk wordt meegestuurd.<br><strong>Advies:</strong> kort en taakgericht (taal, stijl, domeinwoorden).<br><strong>Te lang:</strong> meer promptruis en mogelijk minder stabiele output.</div>
+          </div>
+          <div class="inline-row" style="gap:1rem; align-items:flex-end;">
+            <label class="toggle-label" style="margin-bottom:0.25rem;">
+              <input type="checkbox" ${enableSpeakerLabels ? "checked" : ""} onchange="updateConfigBool(${ai}, 'enable_speaker_labels', this.checked)">
+              <span class="toggle-switch"></span>
+              <span class="toggle-text">Sprekerlabels aan</span>
+            </label>
+            <label class="toggle-label" style="margin-bottom:0.25rem;">
+              <input type="checkbox" ${includeTimestamps ? "checked" : ""} onchange="updateConfigBool(${ai}, 'include_timestamps', this.checked)">
+              <span class="toggle-switch"></span>
+              <span class="toggle-text">Timestamps tonen</span>
+            </label>
+          </div>
+          <div class="help-text" style="margin-top:0.25rem;"><strong>Sprekerlabels:</strong> momenteel niet gebruikt in de vereenvoudigde transcript-UI. Uit laten voor consistente output.<br><strong>Timestamps:</strong> aan = beter terugzoeken in transcript; uit = rustiger tekstbeeld.</div>
+        </div>`;
+    }
+
+    div.innerHTML = `
+      <div class="app-header">
+        <span class="drag-handle" title="Sleep om te herschikken">${DRAG_ICON}</span>
+        <span class="app-num">${ai + 1}</span>
+        <span class="app-title-text">${escHTML(app.name || "Nieuwe app")}</span>
+        <span class="target-badge ${badgeClass}">${escHTML(badgeLabel)}</span>
+        <button class="btn btn-danger btn-sm" onclick="removeApp(${ai})">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width:12px;height:12px;"><path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"/></svg>
+          Verwijderen
+        </button>
+      </div>
+      <div class="inline-row">
+        <div class="form-group" style="flex:0 0 56px;">
+          <label>Icoon</label>
+          ${emojiButtonHTML("app-" + ai, app.icon)}
+        </div>
+        <div class="form-group" style="flex:0 0 120px;">
+          <label>ID</label>
+          <input type="text" value="${escAttr(app.id || "")}" onchange="updateApp(${ai}, 'id', this.value)">
+        </div>
+        <div class="form-group">
+          <label>Naam</label>
+          <input type="text" value="${escAttr(app.name || "")}" onchange="updateApp(${ai}, 'name', this.value)">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Beschrijving</label>
+        <input type="text" value="${escAttr(app.description || "")}" onchange="updateApp(${ai}, 'description', this.value)">
+      </div>
+      <div class="inline-row">
+        <div class="form-group" style="flex:2;">
+          <label>URL</label>
+          <input type="text" value="${escAttr(app.url || "")}" onchange="updateApp(${ai}, 'url', this.value)">
+          <div class="help-text">Voor versimpelaar: de n8n webhook URL</div>
+        </div>
+        <div class="form-group" style="flex:1;">
+          <label>Target type</label>
+          <select onchange="updateTarget(${ai}, this.value)">${targetOptions}</select>
+        </div>
+      </div>
+      ${configHTML}`;
+    container.appendChild(div);
+  });
+}
+
+function updateApp(ai, key, value) {
+  data.apps[ai][key] = value;
+  if (key === "name" || key === "icon") renderApps();
+}
+
+function updateTarget(ai, value) {
+  data.apps[ai].target = value;
+  if (value === "versimpelaar" && !data.apps[ai].config) {
+    data.apps[ai].config = { language_levels: ["B1", "B2"], default_level: "B1" };
+  }
+  if (value === "transcriptie" && !data.apps[ai].config) {
+    data.apps[ai].config = {
+      webhook_token: "",
+      chunk_ms: 5000,
+      chunk_min_ms: 2200,
+      chunk_max_ms: 12000,
+      vad_silence_ms: 900,
+      vad_threshold: 0.012,
+      silence_threshold: 0.012,
+      overlap_ms: 650,
+      context_prompt: "Nederlands gesprek, maak een complete en nette transcriptie.",
+      max_duration_minutes: 120,
+      litellm_model: "gpt-4o-transcribe",
+      language: "nl",
+      enable_speaker_labels: false,
+      include_timestamps: true,
+    };
+  }
+  renderApps();
+}
+
+function updateConfig(ai, key, value) {
+  if (!data.apps[ai].config) data.apps[ai].config = {};
+  if (key === "language_levels") {
+    data.apps[ai].config[key] = value.split(",").map(s => s.trim()).filter(Boolean);
+  } else if (
+    key === "chunk_ms" ||
+    key === "chunk_min_ms" ||
+    key === "chunk_max_ms" ||
+    key === "vad_silence_ms" ||
+    key === "vad_threshold" ||
+    key === "silence_threshold" ||
+    key === "overlap_ms" ||
+    key === "max_duration_minutes"
+  ) {
+    const n = Number(value);
+    data.apps[ai].config[key] = Number.isFinite(n) ? n : value;
+  } else {
+    data.apps[ai].config[key] = value;
+  }
+}
+
+function updateConfigBool(ai, key, value) {
+  if (!data.apps[ai].config) data.apps[ai].config = {};
+  data.apps[ai].config[key] = Boolean(value);
+}
+
+function addApp() {
+  data.apps.push({
+    id: "app" + (data.apps.length + 1),
+    name: "Nieuwe app",
+    icon: "",
+    description: "",
+    url: "",
+    target: "blank",
+  });
+  renderApps();
+}
+
+function removeApp(ai) {
+  if (!confirm("Weet je zeker dat je deze app wilt verwijderen?")) return;
+  data.apps.splice(ai, 1);
+  renderApps();
+}
+
+async function save() {
+  data.title = document.getElementById("apps-title").value;
+  data.enabled = document.getElementById("apps-enabled").checked;
+  try {
+    const resp = await fetch("/api/config/apps", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (resp.ok) {
+      showToast("Apps configuratie opgeslagen!", "success");
+    } else {
+      showToast("Fout bij opslaan: " + resp.statusText, "error");
+    }
+  } catch (err) {
+    showToast("Fout bij opslaan: " + err.message, "error");
+  }
+}
+
+function showToast(msg, type) {
+  const el = document.createElement("div");
+  el.className = "toast toast-" + type;
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => { el.style.opacity = "0"; setTimeout(() => el.remove(), 300); }, 3000);
+}
+
+function escHTML(s) { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; }
+function escAttr(s) { return (s || "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+
+render();
+</script>
+</body>
+</html>

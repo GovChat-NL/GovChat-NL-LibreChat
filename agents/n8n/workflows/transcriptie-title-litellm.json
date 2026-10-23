@@ -1,0 +1,132 @@
+[
+  {
+    "updatedAt": "2026-07-10T09:00:00.000Z",
+    "createdAt": "2026-07-10T09:00:00.000Z",
+    "id": "govchat-transcriptie-title-litellm",
+    "name": "GovChat Transcriptie Titel (LiteLLM)",
+    "description": "Genereert een korte sessietitel op basis van transcriptietekst in de gekozen taal",
+    "active": true,
+    "isArchived": false,
+    "nodes": [
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "transcriptie-title-litellm",
+          "responseMode": "lastNode",
+          "options": {}
+        },
+        "id": "WebhookTranscriptTitle",
+        "name": "Webhook Transcript Title",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 2.1,
+        "position": [
+          -860,
+          200
+        ],
+        "webhookId": "govchat-transcriptie-title-litellm"
+      },
+      {
+        "parameters": {
+          "jsCode": "const body = $json.body || {}\nconst headers = $json.headers || {}\n\nconst suppliedToken = String(headers['x-govchat-token'] || headers['X-Govchat-Token'] || '').trim()\nconst expectedToken = String($env.N8N_WEBHOOK_TOKEN || '').trim()\n\nif (!expectedToken) throw new Error('Server misconfiguratie: N8N_WEBHOOK_TOKEN ontbreekt')\nif (!suppliedToken || suppliedToken !== expectedToken) throw new Error('Unauthorized webhook token')\n\nconst sourceText = String(body.text || body.transcript || '').replace(/[\\r\\n\\t]+/g, ' ').replace(/\\s+/g, ' ').trim()\nif (!sourceText) throw new Error('Veld \"text\" is verplicht')\n\nconst language = String(body.language || 'nl').trim() || 'nl'\nconst maxChars = Math.max(32, Math.min(140, Number(body.max_chars) || 72))\nconst model = String(body.model || $env.LITELLM_TITLE_MODEL || 'gpt-4o-mini').trim() || 'gpt-4o-mini'\n\nconst clipped = sourceText.slice(0, 4000)\n\nconst system = `Je maakt een korte, duidelijke titel voor een transcriptie-sessie.\\nRegels:\\n- Gebruik dezelfde taal als de gebruiker (taalcode: ${language}).\\n- Maximaal ${maxChars} tekens.\\n- Geen aanhalingstekens.\\n- Geen punt op het einde.\\n- Lever exact één titelregel, zonder extra uitleg.`\n\nconst user = `Transcriptie:\\n${clipped}`\n\nreturn [{\n  json: {\n    model,\n    maxChars,\n    requestBody: {\n      model,\n      temperature: 0.2,\n      max_tokens: 48,\n      messages: [\n        { role: 'system', content: system },\n        { role: 'user', content: user },\n      ],\n    },\n  },\n}]"
+        },
+        "id": "PrepareTitleRequest",
+        "name": "Prepare Title Request",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -620,
+          200
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "={{ ((String($env.LITELLM_URL || '').endsWith('/')) ? String($env.LITELLM_URL || '').slice(0, -1) : String($env.LITELLM_URL || '')) + '/v1/chat/completions' }}",
+          "authentication": "none",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Authorization",
+                "value": "={{ 'Bearer ' + String($env.LITELLM_API_KEY || '') }}"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify($json.requestBody) }}",
+          "options": {
+            "timeout": 120000
+          }
+        },
+        "id": "CallTitleApi",
+        "name": "Call Title API",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          -360,
+          200
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "const response = $json || {}\nconst text = String(response?.choices?.[0]?.message?.content || response?.output_text || response?.text || '').replace(/[\\r\\n\\t]+/g, ' ').replace(/\\s+/g, ' ').replace(/^\\s*[\"'`]+|[\"'`]+\\s*$/g, '').trim()\nconst maxChars = Math.max(32, Math.min(140, Number($item(0).$node['Prepare Title Request'].json.maxChars) || 72))\nconst title = (text.length > maxChars ? text.slice(0, maxChars).trim() : text) || 'Transcriptie sessie'\nreturn [{ json: { title } }]"
+        },
+        "id": "BuildTitleResponse",
+        "name": "Build Title Response",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -120,
+          200
+        ]
+      }
+    ],
+    "connections": {
+      "Webhook Transcript Title": {
+        "main": [
+          [
+            {
+              "node": "Prepare Title Request",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Prepare Title Request": {
+        "main": [
+          [
+            {
+              "node": "Call Title API",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Call Title API": {
+        "main": [
+          [
+            {
+              "node": "Build Title Response",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "settings": {
+      "executionOrder": "v1"
+    },
+    "pinData": null,
+    "versionId": "9d6f53e8-b738-4c3f-9f5a-9402e6e74fd2",
+    "triggerCount": 0,
+    "tags": []
+  }
+]

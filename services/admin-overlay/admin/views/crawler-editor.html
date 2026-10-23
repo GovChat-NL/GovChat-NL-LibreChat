@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Overheidscrawler - GovChat Admin</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f1f5f9; color: #1e293b; }
+  .navbar { background: #1a365d; padding: 0 1.5rem; height: 56px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
+  .nav-brand { display: flex; align-items: center; gap: 0.625rem; }
+  .nav-brand svg { width: 30px; height: 30px; }
+  .nav-brand-text { font-size: 0.9375rem; font-weight: 700; color: #fff; }
+  .nav-brand-text .nl { color: #e65100; }
+  .nav-links { display: flex; gap: 0.25rem; align-items: center; }
+  .nav-links a { color: rgba(255,255,255,0.7); text-decoration: none; font-size: 0.8rem; font-weight: 500; padding: 0.375rem 0.75rem; border-radius: 6px; transition: all 0.15s; }
+  .nav-links a:hover { color: #fff; background: rgba(255,255,255,0.1); }
+  .nav-links .active { color: #fff; background: rgba(255,255,255,0.12); }
+  .breadcrumb { max-width: 1000px; margin: 1rem auto 0; padding: 0 1rem; font-size: 0.75rem; color: #94a3b8; }
+  .breadcrumb a { color: #64748b; text-decoration: none; }
+  .container { max-width: 1000px; margin: 0.75rem auto 2rem; padding: 0 1rem; }
+  .card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); padding: 1.25rem; margin-bottom: 1rem; border: 1px solid #e2e8f0; }
+  .top-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; gap: .75rem; }
+  .top-bar h2 { font-size: 1rem; color: #1a365d; font-weight: 700; }
+  .row { display: flex; gap: .5rem; }
+  .row .group { flex: 1; }
+  .group { margin-bottom: .75rem; }
+  label { display:block; font-size: .75rem; font-weight: 600; color:#475569; margin-bottom:.375rem; text-transform: uppercase; letter-spacing:.04em; }
+  input[type="text"], input[type="number"], textarea { width:100%; padding:.5rem .75rem; border:1.5px solid #e2e8f0; border-radius:8px; font-size:.8125rem; font-family:inherit; }
+  textarea { min-height: 90px; resize: vertical; }
+  .toggle-label { display:flex; align-items:center; gap:.625rem; }
+  .toggle-label input { display:none; }
+  .toggle-switch { width:40px; height:22px; background:#cbd5e1; border-radius:11px; position:relative; transition: background .2s; }
+  .toggle-switch::after { content:""; position:absolute; top:3px; left:3px; width:16px; height:16px; background:#fff; border-radius:50%; transition: transform .2s; }
+  .toggle-label input:checked + .toggle-switch { background:#16a34a; }
+  .toggle-label input:checked + .toggle-switch::after { transform: translateX(18px); }
+  .btn { display:inline-flex; align-items:center; gap:.375rem; padding:.45rem .9rem; border:none; border-radius:8px; font-size:.8rem; font-weight:600; cursor:pointer; }
+  .btn-primary { background:#1a365d; color:#fff; }
+  .btn-primary:hover { background:#e65100; }
+  .btn-secondary { background:#f1f5f9; color:#475569; border:1.5px solid #e2e8f0; }
+  .btn-danger { background:#fff; color:#dc2626; border:1.5px solid #fecaca; }
+  .btn-warning { background:#fff7ed; color:#9a3412; border:1.5px solid #fdba74; }
+  .source { background:#f8fafc; border:1.5px solid #e2e8f0; border-radius:10px; padding:1rem; margin-bottom:.75rem; }
+  .runs { max-height: 360px; overflow:auto; border:1.5px solid #e2e8f0; border-radius:10px; }
+  .run { padding:.75rem; border-bottom:1px solid #e2e8f0; font-size:.78rem; }
+  .run:last-child { border-bottom:none; }
+  .grid-two { display:grid; grid-template-columns: 1fr 1fr; gap:1rem; }
+  .table-wrap { max-height: 360px; overflow:auto; border:1.5px solid #e2e8f0; border-radius:10px; background:#fff; }
+  .table-wrap-tall { max-height: 520px; }
+  table { width:100%; border-collapse: collapse; font-size:.75rem; }
+  th, td { border-bottom:1px solid #e2e8f0; padding:.45rem .5rem; text-align:left; vertical-align: top; }
+  th { position: sticky; top: 0; background:#f8fafc; z-index:1; }
+  .badge { display:inline-block; padding:.15rem .4rem; border-radius:999px; font-size:.68rem; font-weight:700; }
+  .badge-ok { background:#dcfce7; color:#166534; }
+  .badge-warn { background:#ffedd5; color:#9a3412; }
+  .badge-fail { background:#fee2e2; color:#991b1b; }
+  .folders { max-height: 320px; overflow:auto; border:1.5px solid #e2e8f0; border-radius:10px; background:#fff; padding:.5rem; }
+  .folder-group { padding:.4rem .5rem; border-radius:8px; margin-bottom:.35rem; background:#f8fafc; border:1px solid #e2e8f0; }
+  .folder-title { font-size:.78rem; font-weight:700; color:#1e293b; margin-bottom:.2rem; }
+  .folder-sub { margin-left:.6rem; }
+  .folder-sub-item { display:flex; justify-content:space-between; gap:.5rem; font-size:.73rem; color:#334155; padding:.15rem 0; }
+  .summary-grid { display:grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap:.6rem; margin-bottom:.8rem; }
+  .summary-item { border:1px solid #e2e8f0; border-radius:10px; padding:.55rem .65rem; background:#f8fafc; }
+  .summary-item .k { font-size:.68rem; text-transform:uppercase; letter-spacing:.04em; color:#64748b; margin-bottom:.15rem; }
+  .summary-item .v { font-size:.95rem; font-weight:700; color:#1e293b; }
+  .website-meta { display:grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap:.55rem; margin-bottom:.8rem; }
+  .search-row { display:flex; gap:.55rem; align-items:center; margin-bottom:.55rem; }
+  .search-row input[type="text"] { max-width: 460px; }
+  .meta-item { border:1px solid #e2e8f0; border-radius:8px; padding:.5rem .6rem; background:#fff; }
+  .meta-item .k { font-size:.68rem; color:#64748b; text-transform:uppercase; letter-spacing:.04em; }
+  .meta-item .v { font-size:.8rem; color:#0f172a; margin-top:.15rem; word-break:break-word; }
+  .run .status { font-weight:700; }
+  .status-ok { color:#16a34a; }
+  .status-skip { color:#b45309; }
+  .status-fail { color:#dc2626; }
+  .muted { color:#64748b; font-size:.75rem; }
+  .toast { position: fixed; bottom: 1.5rem; right: 1.5rem; padding: 0.75rem 1.25rem; border-radius: 8px; font-size: 0.8125rem; font-weight: 500; color: #fff; z-index: 9999; }
+  .toast-success { background: #16a34a; }
+  .toast-error { background: #dc2626; }
+  @media (max-width: 960px) { .grid-two, .summary-grid, .website-meta { grid-template-columns: 1fr; } }
+  @media (max-width: 800px) { .row { flex-direction: column; } .top-bar { flex-wrap: wrap; } }
+</style>
+</head>
+<body>
+<nav class="navbar">
+  <div class="nav-brand">
+    <svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg"><circle cx="60" cy="56" r="48" fill="#243f6b"/><line x1="35" y1="25" x2="85" y2="65" stroke="#e65100" stroke-width="7" stroke-linecap="round"/><line x1="85" y1="25" x2="35" y2="65" stroke="#e65100" stroke-width="7" stroke-linecap="round"/></svg>
+    <span class="nav-brand-text">GovChat-<span class="nl">NL</span> Admin</span>
+  </div>
+  <div class="nav-links">
+    <a href="/dashboard">Dashboard</a>
+    <a href="/help-editor">Handleiding</a>
+    <a href="/apps-editor">Apps</a>
+    <a href="/crawler-editor" class="active">Crawler</a>
+    <a href="/orchestrator-editor">Orchestrator</a>
+    <a href="/beleidskompas-editor">Beleidskompas</a>
+    <a href="/logout">Uitloggen</a>
+  </div>
+</nav>
+
+<div class="breadcrumb"><a href="/dashboard">Dashboard</a> / Overheidscrawler</div>
+
+<div class="container">
+  <div class="card">
+    <div class="top-bar">
+      <h2>Crawler-beleid</h2>
+      <div>
+        <button class="btn btn-secondary" onclick="runNow()">Nu crawlen</button>
+        <button class="btn btn-primary" onclick="save()">Opslaan</button>
+      </div>
+    </div>
+    <div class="row" style="align-items:flex-end;">
+      <div class="group" style="flex:0 0 auto;">
+        <label class="toggle-label">
+          <span>Crawler actief</span>
+          <input type="checkbox" id="enabled">
+          <span class="toggle-switch"></span>
+        </label>
+      </div>
+      <div class="group"><label>Tijdzone</label><input id="timezone" type="text"></div>
+      <div class="group"><label>Interval (min)</label><input id="interval" type="number" min="15"></div>
+      <div class="group"><label>Max pagina's/run</label><input id="maxPages" type="number" min="10"></div>
+    </div>
+    <div class="row">
+      <div class="group"><label>Max diepte</label><input id="maxDepth" type="number" min="1"></div>
+      <div class="group"><label>Timeout per request (ms)</label><input id="timeout" type="number" min="3000"></div>
+      <div class="group"><label>User-Agent</label><input id="userAgent" type="text"></div>
+    </div>
+    <div class="row" style="align-items:flex-end;">
+      <div class="group" style="flex:0 0 auto;">
+        <label class="toggle-label">
+          <span>robots.txt respecteren</span>
+          <input type="checkbox" id="robots">
+          <span class="toggle-switch"></span>
+        </label>
+      </div>
+      <div class="group"><label>Bestandstypen (komma gescheiden)</label><input id="types" type="text"></div>
+    </div>
+    <div class="row" style="align-items:flex-end;">
+      <div class="group" style="flex:0 0 auto;">
+        <label class="toggle-label">
+          <span>Embeddings actief (via LiteLLM)</span>
+          <input type="checkbox" id="embeddingEnabled">
+          <span class="toggle-switch"></span>
+        </label>
+      </div>
+      <div class="group" style="flex:0 0 auto;">
+        <label class="toggle-label">
+          <span>Embeddings overslaan bij ongewijzigde pagina</span>
+          <input type="checkbox" id="skipEmbeddingUnchanged">
+          <span class="toggle-switch"></span>
+        </label>
+      </div>
+      <div class="group"><label>Embedding model alias</label><input id="embeddingModel" type="text"></div>
+      <div class="group"><label>Max chars voor embedding</label><input id="embeddingMaxChars" type="number" min="1000"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="top-bar">
+      <h2>Allowlist bronnen</h2>
+      <button class="btn btn-secondary" onclick="addSource()">Bron toevoegen</button>
+    </div>
+    <div id="sources"></div>
+  </div>
+
+  <div class="card">
+    <div class="top-bar">
+      <h2>Geïndexeerde websites (totaaloverzicht)</h2>
+      <button class="btn btn-secondary" onclick="loadWebsites(true)">Verversen</button>
+    </div>
+    <div id="websites-summary" class="summary-grid"></div>
+    <div class="search-row">
+      <input id="websiteSearch" type="text" placeholder="Zoek op domein, subwebsite, bron of website-id..." oninput="onWebsiteSearch(this.value)">
+      <div id="websiteSearchInfo" class="muted"></div>
+    </div>
+    <div class="grid-two">
+      <div>
+        <label style="margin-bottom:.35rem;">Mappenstructuur (domein / subwebsite)</label>
+        <div id="websites-folders" class="folders"></div>
+      </div>
+      <div>
+        <label style="margin-bottom:.35rem;">Websites</label>
+        <div id="websites-table" class="table-wrap"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="top-bar">
+      <h2>Laatste crawl-runs</h2>
+      <button class="btn btn-secondary" onclick="loadRuns()">Verversen</button>
+    </div>
+    <div id="runs" class="runs"></div>
+  </div>
+
+  <div class="grid-two">
+    <div class="card">
+      <div class="top-bar">
+        <h2>Tokengebruik totaal per domein</h2>
+      </div>
+      <div id="tokens-domain" class="table-wrap"></div>
+    </div>
+    <div class="card">
+      <div class="top-bar">
+        <h2>Tokengebruik totaal per subwebsite</h2>
+      </div>
+      <div id="tokens-subwebsite" class="table-wrap"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="top-bar">
+      <h2>Website details</h2>
+      <div>
+        <button id="deleteWebsiteBtn" class="btn btn-danger" onclick="deleteSelectedWebsite()" disabled>Website verwijderen</button>
+      </div>
+    </div>
+    <div id="website-details-meta" class="website-meta"></div>
+    <div id="website-pages" class="table-wrap table-wrap-tall"></div>
+  </div>
+</div>
+
+<script id="crawler-seed" type="application/json">{{jsonData}}</script>
+<script>
+let data = {};
+let websiteOverview = null;
+let selectedWebsiteId = '';
+let websiteSearchQuery = '';
+try {
+  data = JSON.parse(document.getElementById("crawler-seed")?.textContent || "{}");
+} catch {
+  data = {};
+}
+
+function toCsv(v) { return Array.isArray(v) ? v.join(", ") : ""; }
+function fromCsv(v) { return String(v || "").split(",").map((s) => s.trim()).filter(Boolean); }
+function fmtN(v) { return new Intl.NumberFormat('nl-NL').format(Number(v || 0)); }
+function fmtDate(v) {
+  const ts = Date.parse(String(v || '').trim());
+  if (Number.isNaN(ts)) return '-';
+  return new Date(ts).toLocaleString('nl-NL', { dateStyle: 'medium', timeStyle: 'short' });
+}
+function statusBadge(status) {
+  const s = String(status || '').toLowerCase();
+  if (s === 'finished') return '<span class="badge badge-ok">finished</span>';
+  if (s === 'cancelled' || s === 'cancel_requested' || s === 'skipped') return `<span class="badge badge-warn">${esc(s || 'unknown')}</span>`;
+  if (s === 'running') return '<span class="badge badge-warn">running</span>';
+  return `<span class="badge badge-fail">${esc(s || 'unknown')}</span>`;
+}
+
+function onWebsiteSearch(value) {
+  websiteSearchQuery = String(value || '').trim().toLowerCase();
+  renderWebsiteFolders();
+  renderWebsitesTable();
+}
+
+function getFilteredWebsites() {
+  const websites = Array.isArray(websiteOverview?.websites) ? websiteOverview.websites : [];
+  if (!websiteSearchQuery) return websites;
+  return websites.filter((w) => {
+    const haystack = [
+      w.website_id,
+      w.domain,
+      w.subwebsite,
+      w.source_name,
+      w.source_id,
+      w.folder_path,
+      w.last_run_id,
+    ]
+      .map((v) => String(v || '').toLowerCase())
+      .join(' ');
+    return haystack.includes(websiteSearchQuery);
+  });
+}
+
+function render() {
+  document.getElementById("enabled").checked = data.enabled !== false;
+  document.getElementById("timezone").value = data.timezone || "Europe/Amsterdam";
+  document.getElementById("interval").value = data.crawl_interval_minutes || 1440;
+  document.getElementById("maxPages").value = data.max_pages_per_run || 200;
+  document.getElementById("maxDepth").value = data.max_depth || 3;
+  document.getElementById("timeout").value = data.request_timeout_ms || 15000;
+  document.getElementById("userAgent").value = data.user_agent || "GovChatCrawler/1.0 (+https://govchat.nl)";
+  document.getElementById("robots").checked = data.respect_robots_txt !== false;
+  document.getElementById("types").value = toCsv(data.include_file_types || ["text/html", "application/pdf"]);
+  document.getElementById("embeddingEnabled").checked = data.embedding_enabled !== false;
+  document.getElementById("skipEmbeddingUnchanged").checked = data.skip_embedding_for_unchanged !== false;
+  document.getElementById("embeddingModel").value = data.embedding_model || "govchat-embedding";
+  document.getElementById("embeddingMaxChars").value = data.embedding_max_chars || 8000;
+  renderSources();
+}
+
+function renderSources() {
+  const wrap = document.getElementById("sources");
+  wrap.innerHTML = "";
+  (data.sources || []).forEach((src, i) => {
+    const el = document.createElement("div");
+    el.className = "source";
+    el.innerHTML = `
+      <div class="top-bar" style="margin-bottom:.5rem;"><strong>${esc(src.name || src.id || "Bron")}</strong>
+        <button class="btn btn-danger" onclick="removeSource(${i})">Verwijderen</button></div>
+      <div class="row" style="align-items:flex-end;">
+        <div class="group" style="flex:0 0 auto;"><label class="toggle-label"><span>Actief</span><input type="checkbox" ${src.enabled !== false ? "checked" : ""} onchange="setSource(${i}, 'enabled', this.checked)"><span class="toggle-switch"></span></label></div>
+        <div class="group"><label>ID</label><input type="text" value="${escAttr(src.id || "")}" onchange="setSource(${i}, 'id', this.value)"></div>
+        <div class="group"><label>Naam</label><input type="text" value="${escAttr(src.name || "")}" onchange="setSource(${i}, 'name', this.value)"></div>
+      </div>
+      <div class="group"><label>Start URL</label><input type="text" value="${escAttr(src.start_url || "")}" onchange="setSource(${i}, 'start_url', this.value)"></div>
+      <div class="row">
+        <div class="group"><label>Allowed domains (komma)</label><input type="text" value="${escAttr(toCsv(src.allowed_domains))}" onchange="setSourceCsv(${i}, 'allowed_domains', this.value)"></div>
+        <div class="group"><label>Allowed path prefixes (komma)</label><input type="text" value="${escAttr(toCsv(src.allowed_path_prefixes))}" onchange="setSourceCsv(${i}, 'allowed_path_prefixes', this.value)"></div>
+      </div>
+      <div class="row">
+        <div class="group"><label>Sitemaps (komma)</label><input type="text" value="${escAttr(toCsv(src.sitemap_urls))}" onchange="setSourceCsv(${i}, 'sitemap_urls', this.value)"></div>
+        <div class="group"><label>Interval (min)</label><input type="number" min="15" value="${Number(src.interval_minutes || data.crawl_interval_minutes || 1440)}" onchange="setSource(${i}, 'interval_minutes', Number(this.value || 1440))"></div>
+        <div class="group"><label>Max pagina's</label><input type="number" min="1" value="${Number(src.max_pages || 75)}" onchange="setSource(${i}, 'max_pages', Number(this.value || 75))"></div>
+        <div class="group"><label>Max diepte</label><input type="number" min="1" value="${Number(src.max_depth || data.max_depth || 3)}" onchange="setSource(${i}, 'max_depth', Number(this.value || 3))"></div>
+      </div>
+      <div class="muted">Subdomeinen toegestaan: ${src.include_subdomains !== false ? "ja" : "nee"}</div>
+    `;
+    wrap.appendChild(el);
+  });
+}
+
+function setSource(i, key, value) { data.sources[i][key] = value; }
+function setSourceCsv(i, key, value) { data.sources[i][key] = fromCsv(value); }
+
+function addSource() {
+  if (!Array.isArray(data.sources)) data.sources = [];
+  const idx = data.sources.length + 1;
+  data.sources.push({
+    id: "source-" + idx,
+    name: "Bron " + idx,
+    enabled: true,
+    start_url: "https://",
+    sitemap_urls: [],
+    allowed_domains: [],
+    allowed_path_prefixes: ["/"],
+    include_subdomains: true,
+    max_pages: 75,
+    max_depth: Number(data.max_depth || 3),
+    interval_minutes: Number(data.crawl_interval_minutes || 1440),
+  });
+  renderSources();
+}
+
+function removeSource(i) { data.sources.splice(i, 1); renderSources(); }
+
+function readForm() {
+  data.enabled = document.getElementById("enabled").checked;
+  data.timezone = document.getElementById("timezone").value.trim() || "Europe/Amsterdam";
+  data.crawl_interval_minutes = Number(document.getElementById("interval").value || 1440);
+  data.max_pages_per_run = Number(document.getElementById("maxPages").value || 200);
+  data.max_depth = Number(document.getElementById("maxDepth").value || 3);
+  data.request_timeout_ms = Number(document.getElementById("timeout").value || 15000);
+  data.user_agent = document.getElementById("userAgent").value.trim() || "GovChatCrawler/1.0 (+https://govchat.nl)";
+  data.respect_robots_txt = document.getElementById("robots").checked;
+  data.include_file_types = fromCsv(document.getElementById("types").value);
+  data.embedding_enabled = document.getElementById("embeddingEnabled").checked;
+  data.skip_embedding_for_unchanged = document.getElementById("skipEmbeddingUnchanged").checked;
+  data.embedding_model = document.getElementById("embeddingModel").value.trim() || "govchat-embedding";
+  data.embedding_max_chars = Number(document.getElementById("embeddingMaxChars").value || 8000);
+}
+
+function renderTable(containerId, rows, columns) {
+  const box = document.getElementById(containerId);
+  if (!rows.length) {
+    box.innerHTML = '<div class="run muted">Geen data beschikbaar.</div>';
+    return;
+  }
+  const head = columns.map((c) => `<th>${esc(c.label)}</th>`).join('');
+  const body = rows.map((row) => `<tr>${columns.map((c) => `<td>${esc(c.value(row))}</td>`).join('')}</tr>`).join('');
+  box.innerHTML = `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+}
+
+function setSelectedWebsite(websiteId) {
+  selectedWebsiteId = String(websiteId || '').trim();
+  renderWebsitesTable();
+  loadWebsiteDetails(selectedWebsiteId);
+}
+
+function renderWebsitesSummary() {
+  const box = document.getElementById('websites-summary');
+  const t = websiteOverview?.totals || {};
+  const items = [
+    { key: 'Websites', value: fmtN(t.websites_count || 0) },
+    { key: 'Domeinen', value: fmtN(t.domains_count || 0) },
+    { key: 'Subwebsites', value: fmtN(t.subwebsites_count || 0) },
+    { key: 'Pagina\'s geïndexeerd', value: fmtN(t.pages_indexed || 0) },
+  ];
+  box.innerHTML = items.map((item) => `<div class="summary-item"><div class="k">${esc(item.key)}</div><div class="v">${esc(item.value)}</div></div>`).join('');
+}
+
+function renderWebsiteFolders() {
+  const box = document.getElementById('websites-folders');
+  const websites = getFilteredWebsites();
+  const info = document.getElementById('websiteSearchInfo');
+  const total = Array.isArray(websiteOverview?.websites) ? websiteOverview.websites.length : 0;
+  info.textContent = `${fmtN(websites.length)} van ${fmtN(total)} websites getoond`;
+
+  if (!websites.length) {
+    box.innerHTML = '<div class="muted">Nog geen websites geïndexeerd.</div>';
+    return;
+  }
+
+  const folderMap = new Map();
+  for (const w of websites) {
+    const domain = String(w.domain || 'unknown');
+    const sub = String(w.subwebsite || 'unknown');
+    if (!folderMap.has(domain)) {
+      folderMap.set(domain, new Map());
+    }
+    const subMap = folderMap.get(domain);
+    if (!subMap.has(sub)) {
+      subMap.set(sub, { websites: 0, pages: 0 });
+    }
+    const bucket = subMap.get(sub);
+    bucket.websites += 1;
+    bucket.pages += Number(w.total_pages_indexed || 0);
+  }
+
+  const domainRows = [...folderMap.entries()].map(([domain, subMap]) => {
+    const subs = [...subMap.entries()]
+      .map(([subName, agg]) => ({ subName, ...agg }))
+      .sort((a, b) => b.pages - a.pages);
+    const domainWebsiteCount = subs.reduce((sum, s) => sum + s.websites, 0);
+    const subHtml = subs
+      .map((sub) => `<div class="folder-sub-item"><span>${esc(sub.subName)}</span><span>${fmtN(sub.websites)} sites · ${fmtN(sub.pages)} pagina\'s</span></div>`)
+      .join('');
+    return `<div class="folder-group"><div class="folder-title">${esc(domain)} <span class="muted">(${fmtN(domainWebsiteCount)} websites)</span></div><div class="folder-sub">${subHtml}</div></div>`;
+  });
+
+  box.innerHTML = domainRows.join('');
+}
+
+function renderWebsitesTable() {
+  const box = document.getElementById('websites-table');
+  const websites = getFilteredWebsites();
+  if (!websites.length) {
+    box.innerHTML = '<div class="run muted">Nog geen websites geïndexeerd.</div>';
+    return;
+  }
+  const rows = websites.map((w) => {
+    const selected = w.website_id === selectedWebsiteId;
+    return `<tr style="${selected ? 'background:#eff6ff;' : ''}">
+      <td><button class="btn btn-secondary" style="padding:.2rem .5rem;font-size:.7rem;" onclick="setSelectedWebsite('${escAttr(w.website_id)}')">${selected ? 'Geselecteerd' : 'Open'}</button></td>
+      <td>${esc(w.domain || '-')}</td>
+      <td>${esc(w.subwebsite || '-')}</td>
+      <td>${esc(w.source_name || w.source_id || '-')}</td>
+      <td>${fmtN(w.total_pages_indexed || 0)}</td>
+      <td>${fmtDate(w.last_indexed_at)}</td>
+      <td>${statusBadge(w.last_run_status)}</td>
+    </tr>`;
+  }).join('');
+  box.innerHTML = `<table><thead><tr><th>Actie</th><th>Domein</th><th>Subwebsite</th><th>Bron</th><th>Pagina's</th><th>Laatst geïndexeerd</th><th>Run status</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function renderTokenTablesFromOverview() {
+  const websites = Array.isArray(websiteOverview?.websites) ? websiteOverview.websites : [];
+  const byDomain = {};
+  const bySubwebsite = {};
+
+  for (const w of websites) {
+    const domain = String(w.domain || 'unknown');
+    const subwebsite = String(w.subwebsite || 'unknown');
+    const pages = Number(w.total_pages_indexed || 0);
+    const totalTokens = Number(w.total_tokens || 0);
+
+    if (!byDomain[domain]) byDomain[domain] = { key: domain, pages: 0, total_tokens: 0 };
+    byDomain[domain].pages += pages;
+    byDomain[domain].total_tokens += totalTokens;
+
+    if (!bySubwebsite[subwebsite]) bySubwebsite[subwebsite] = { key: subwebsite, pages: 0, total_tokens: 0 };
+    bySubwebsite[subwebsite].pages += pages;
+    bySubwebsite[subwebsite].total_tokens += totalTokens;
+  }
+
+  const domainRows = Object.values(byDomain).sort((a, b) => b.total_tokens - a.total_tokens);
+  const subRows = Object.values(bySubwebsite).sort((a, b) => b.total_tokens - a.total_tokens);
+
+  renderTable('tokens-domain', domainRows, [
+    { label: 'Domein', value: (r) => r.key },
+    { label: 'Pagina\'s', value: (r) => fmtN(r.pages || 0) },
+    { label: 'Totaal tokens', value: (r) => fmtN(r.total_tokens || 0) },
+  ]);
+  renderTable('tokens-subwebsite', subRows, [
+    { label: 'Subwebsite', value: (r) => r.key },
+    { label: 'Pagina\'s', value: (r) => fmtN(r.pages || 0) },
+    { label: 'Totaal tokens', value: (r) => fmtN(r.total_tokens || 0) },
+  ]);
+}
+
+function renderEmptyWebsiteDetails(message = 'Selecteer een website om details te tonen.') {
+  document.getElementById('website-details-meta').innerHTML = `<div class="muted">${esc(message)}</div>`;
+  document.getElementById('website-pages').innerHTML = '<div class="run muted">Geen pagina-data beschikbaar.</div>';
+  document.getElementById('deleteWebsiteBtn').disabled = true;
+}
+
+function renderWebsiteDetails(website) {
+  if (!website) {
+    renderEmptyWebsiteDetails();
+    return;
+  }
+  document.getElementById('deleteWebsiteBtn').disabled = false;
+  const meta = [
+    ['Website ID', website.website_id || '-'],
+    ['Map', website.folder_path || '-'],
+    ['Bron', website.source_name || website.source_id || '-'],
+    ['Eerste indexatie', fmtDate(website.first_indexed_at)],
+    ['Laatste indexatie', fmtDate(website.last_indexed_at)],
+    ['Laatste run', `${website.last_run_id || '-'} (${website.last_run_status || 'unknown'})`],
+    ['Totaal pagina\'s', fmtN(website.total_pages_indexed || 0)],
+    ['Unieke URL\'s', fmtN(website.unique_url_count || 0)],
+    ['Totaal tokens', fmtN(website.total_tokens || 0)],
+  ];
+  document.getElementById('website-details-meta').innerHTML = meta
+    .map(([k, v]) => `<div class="meta-item"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`)
+    .join('');
+
+  const pageRows = Array.isArray(website.pages) ? website.pages : [];
+  renderTable('website-pages', pageRows, [
+    { label: 'Geïndexeerd op', value: (r) => fmtDate(r.indexed_at) },
+    { label: 'Run ID', value: (r) => r.run_id || '-' },
+    { label: 'URL', value: (r) => r.url || '-' },
+    { label: 'Pad', value: (r) => r.path || '-' },
+    { label: 'Type', value: (r) => r.content_type || '-' },
+    { label: 'Tokens', value: (r) => fmtN(r.total_tokens || 0) },
+    { label: 'Embedding', value: (r) => r.embedding_status || '-' },
+  ]);
+}
+
+async function loadWebsites(forceRefresh = false) {
+  try {
+    const res = await fetch('/api/crawler/websites');
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(payload.error || res.statusText || 'Onbekende fout');
+    websiteOverview = payload || { totals: {}, folders: [], websites: [] };
+    renderWebsitesSummary();
+    renderWebsiteFolders();
+    renderWebsitesTable();
+    renderTokenTablesFromOverview();
+
+    const websites = Array.isArray(websiteOverview.websites) ? websiteOverview.websites : [];
+    const hasSelected = websites.some((w) => w.website_id === selectedWebsiteId);
+    if (!hasSelected) {
+      selectedWebsiteId = websites[0]?.website_id || '';
+    }
+    if (selectedWebsiteId) {
+      renderWebsitesTable();
+      await loadWebsiteDetails(selectedWebsiteId, forceRefresh);
+    } else {
+      renderEmptyWebsiteDetails('Nog geen websites beschikbaar. Start eerst een crawler-run.');
+    }
+  } catch (err) {
+    document.getElementById('websites-summary').innerHTML = '<div class="muted">Overzicht laden mislukt.</div>';
+    document.getElementById('websites-folders').innerHTML = '<div class="muted">Mappenstructuur laden mislukt.</div>';
+    document.getElementById('websites-table').innerHTML = '<div class="run muted">Websites laden mislukt.</div>';
+    document.getElementById('tokens-domain').innerHTML = '<div class="run muted">Geen tokendata.</div>';
+    document.getElementById('tokens-subwebsite').innerHTML = '<div class="run muted">Geen tokendata.</div>';
+    renderEmptyWebsiteDetails('Website-details laden mislukt.');
+  }
+}
+
+async function loadWebsiteDetails(websiteId) {
+  const id = String(websiteId || '').trim();
+  if (!id) {
+    renderEmptyWebsiteDetails();
+    return;
+  }
+  try {
+    const res = await fetch('/api/crawler/websites/' + encodeURIComponent(id));
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(payload.error || res.statusText || 'Onbekende fout');
+    renderWebsiteDetails(payload.website || null);
+  } catch (err) {
+    renderEmptyWebsiteDetails('Website-details laden mislukt: ' + err.message);
+  }
+}
+
+async function deleteSelectedWebsite() {
+  const id = String(selectedWebsiteId || '').trim();
+  if (!id) return;
+  if (!window.confirm('Weet je zeker dat je deze website uit alle crawl-historie wilt verwijderen?')) return;
+  try {
+    const res = await fetch('/api/crawler/websites/' + encodeURIComponent(id), { method: 'DELETE' });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(payload.error || res.statusText || 'Onbekende fout');
+    toast('Website verwijderd uit indexhistorie', 'success');
+    selectedWebsiteId = '';
+    await loadWebsites(true);
+  } catch (err) {
+    toast('Website verwijderen mislukt: ' + err.message, 'error');
+  }
+}
+
+async function save() {
+  readForm();
+  try {
+    const crawlerRes = await fetch('/api/crawler/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+
+    const crawlerPayload = await crawlerRes.json().catch(() => ({}));
+    if (!crawlerRes.ok) {
+      throw new Error(crawlerPayload.error || crawlerRes.statusText || 'Onbekende fout');
+    }
+
+    data = crawlerPayload.config || data;
+    render();
+    toast('Crawler-configuratie opgeslagen', 'success');
+  } catch (err) {
+    toast('Opslaan mislukt: ' + err.message, 'error');
+  }
+}
+
+async function runNow() {
+  try {
+    const res = await fetch('/api/crawler/run', { method: 'POST' });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(payload.error || res.statusText || 'Onbekende fout');
+    toast('Crawler-run gestart (' + (payload.run_id || 'zonder id') + ')', 'success');
+    setTimeout(loadRuns, 1200);
+  } catch (err) {
+    toast('Start run mislukt: ' + err.message, 'error');
+  }
+}
+
+async function loadRuns() {
+  try {
+    const res = await fetch('/api/crawler/runs?limit=30');
+    const payload = await res.json();
+    const runs = Array.isArray(payload.runs) ? payload.runs : [];
+    const box = document.getElementById('runs');
+    if (!runs.length) {
+      box.innerHTML = '<div class="run muted">Nog geen crawl-runs geregistreerd.</div>';
+      return;
+    }
+    box.innerHTML = runs.map((r) => {
+      const status = String(r.status || '').toLowerCase();
+      const cls = status === 'finished'
+        ? 'status-ok'
+        : (status === 'skipped' || status === 'cancel_requested' ? 'status-skip' : 'status-fail');
+      const sum = r.summary || {};
+      const diag = (sum && typeof sum.diagnostics === 'object') ? sum.diagnostics : {};
+      const visited = Number(sum.visited_pages || 0);
+      const warnings = [];
+      if (status === 'skipped') {
+        warnings.push(String(r.error || diag.skip_reason || 'Run is overgeslagen'));
+      }
+      if (status === 'finished' && visited === 0) {
+        warnings.push('Run is afgerond maar leverde 0 bezochte pagina\'s op. Controleer allowlist, robots.txt en bron-URL.');
+      }
+      if (visited === 0 && Number(sum.fetch_errors || 0) > 0) {
+        warnings.push('Er waren fetch-fouten en er zijn geen pagina\'s verwerkt.');
+      }
+      const canCancel = status === 'running' || status === 'cancel_requested';
+      const cancelBtn = canCancel
+        ? `<button class="btn btn-warning" style="padding:.2rem .55rem; font-size:.68rem;" onclick="cancelRun('${escAttr(r.run_id || '')}')">${status === 'cancel_requested' ? 'Annulering aangevraagd' : 'Annuleer run'}</button>`
+        : '';
+      return `<div class="run"><div><span class="status ${cls}">${esc(status || 'unknown')}</span> · <strong>${esc(r.run_id || '-')}</strong></div>
+        <div class="muted">${esc(r.trigger || 'manual')} · gestart ${esc(r.started_at || '-')} · klaar ${esc(r.finished_at || '-')}</div>
+        <div class="muted">bezocht: ${visited} · gevonden: ${Number(sum.discovered_links || 0)} · robots-blokkades: ${Number(sum.robots_blocked || 0)} · errors: ${Number(sum.fetch_errors || 0)}</div>
+        <div class="muted">embedding-calls: ${Number(sum.embedding_calls || 0)} · embedding-errors: ${Number(sum.embedding_errors || 0)}</div>
+        ${diag && Object.keys(diag).length
+          ? `<div class="muted">diagnostics: enabled=${diag.cfg_enabled === false ? 'false' : 'true'} · configured=${Number(diag.configured_sources || 0)} · active=${Number(diag.enabled_sources || 0)}${Array.isArray(diag.enabled_source_ids) && diag.enabled_source_ids.length ? ` · ids=${esc(diag.enabled_source_ids.join(', '))}` : ''}</div>`
+          : ''}
+        ${warnings.length ? `<div class="muted" style="color:#b45309;">⚠ ${esc(warnings.join(' | '))}</div>` : ''}
+        ${cancelBtn}
+        ${r.error ? `<div class="muted" style="color:#dc2626;">${esc(r.error)}</div>` : ''}</div>`;
+    }).join('');
+
+  } catch {
+    document.getElementById('runs').innerHTML = '<div class="run muted">Runs laden mislukt.</div>';
+  }
+}
+
+async function cancelRun(runId) {
+  const id = String(runId || '').trim();
+  if (!id) return;
+  try {
+    const res = await fetch('/api/crawler/run/' + encodeURIComponent(id) + '/cancel', { method: 'POST' });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(payload.error || res.statusText || 'Onbekende fout');
+    toast('Annulering aangevraagd voor run ' + id, 'success');
+    setTimeout(loadRuns, 700);
+  } catch (err) {
+    toast('Annuleren mislukt: ' + err.message, 'error');
+  }
+}
+
+function toast(msg, type) {
+  const el = document.createElement('div');
+  el.className = 'toast toast-' + type;
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => { el.remove(); }, 2800);
+}
+
+function esc(s) { const d = document.createElement('div'); d.textContent = String(s || ''); return d.innerHTML; }
+function escAttr(s) { return String(s || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+render();
+loadRuns();
+loadWebsites();
+</script>
+</body>
+</html>

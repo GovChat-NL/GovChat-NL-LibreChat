@@ -1,0 +1,18 @@
+{
+  "enabled": false,
+  "timezone": "Europe/Amsterdam",
+  "crawl_interval_minutes": 1440,
+  "max_pages_per_run": 200,
+  "max_depth": 3,
+  "request_timeout_ms": 15000,
+  "user_agent": "GovChatCrawler/1.0 (+https://govchat.nl)",
+  "respect_robots_txt": true,
+  "embedding_enabled": true,
+  "embedding_model": "govchat-embedding",
+  "embedding_max_chars": 8000,
+  "include_file_types": [
+    "text/html",
+    "application/pdf"
+  ],
+  "sources": []
+}

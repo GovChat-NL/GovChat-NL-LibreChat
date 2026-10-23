@@ -482,7 +482,6 @@ services:
       CRAWLER_INTERNAL_TOKEN: ${CRAWLER_INTERNAL_TOKEN:-${N8N_WEBHOOK_TOKEN}}
     volumes:
       - n8n-data:/home/node/.n8n
-      - ./n8n/bootstrap:/bootstrap:ro
       - /opt/librechat/images:/shared-images
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://localhost:5678/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
@@ -529,7 +528,7 @@ services:
       - librechat-net
 
   # ---------------------------------------------------------------------------
-  #  n8n bootstrap - importeert workflows uit GovChat-NL-Agents (GitHub)
+  #  n8n bootstrap - importeert workflows uit de lokale monorepo-component agents/
   # ---------------------------------------------------------------------------
   n8n-bootstrap:
     image: docker.n8n.io/n8nio/n8n:${N8N_VERSION:-2.25.7}
@@ -549,7 +548,6 @@ services:
       DB_POSTGRESDB_PASSWORD: ${N8N_POSTGRES_PASSWORD}
       N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
       N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "true"
-      N8N_WEBHOOK_TOKEN: ${N8N_WEBHOOK_TOKEN}
       N8N_OWNER_EMAIL: ${N8N_OWNER_EMAIL:-}
       N8N_OWNER_PASSWORD: ${N8N_OWNER_PASSWORD:-}
       N8N_OWNER_FIRST_NAME: ${N8N_OWNER_FIRST_NAME:-GovChat}
@@ -557,342 +555,20 @@ services:
       N8N_OWNER_ENFORCE: ${N8N_OWNER_ENFORCE:-true}
       LITELLM_URL: ${LITELLM_URL}
       LITELLM_API_KEY: ${LITELLM_API_KEY}
-      AGENTS_WORKFLOW_SOURCE: ${AGENTS_WORKFLOW_SOURCE:-github}
-      AGENTS_RAW_BASE_URL: ${AGENTS_RAW_BASE_URL:-https://raw.githubusercontent.com/GovChat-NL/GovChat-NL-Agents/main/n8n/workflows}
-      AGENTS_WORKFLOW_FILES: ${AGENTS_WORKFLOW_FILES:-versimpelaar-litellm.json,orchestrator-litellm.json,image-generator-litellm.json,transcriptie-litellm.json,transcriptie-title-litellm.json,govcrawler-run.json,beleidskompas-hoofdagent.json,beleidskompas-step-stap1.json,beleidskompas-step-stap2.json,beleidskompas-step-stap3.json,beleidskompas-step-stap4.json}
-      AGENTS_LOCAL_WORKFLOWS_DIR: ${AGENTS_LOCAL_WORKFLOWS_DIR:-/workspace/GovChat-NL-Agents/n8n/workflows}
+      AGENTS_LOCAL_WORKFLOWS_DIR: ${AGENTS_LOCAL_WORKFLOWS_DIR:-/workspace/agents/n8n/workflows}
       AGENTS_BOOTSTRAP_FORCE: ${AGENTS_BOOTSTRAP_FORCE:-false}
     volumes:
       - n8n-data:/home/node/.n8n
-      - ../GovChat-NL-Agents:/workspace/GovChat-NL-Agents:ro
-    entrypoint:
-      - /bin/sh
-      - -lc
-    command:
-      - |
-        set -e
-
-        echo "[bootstrap] Controleer n8n owner setup..."
-        node - <<'NODE'
-        const { execSync } = require('child_process');
-        const base = 'http://n8n:5678';
-        const email = String(process.env.N8N_OWNER_EMAIL || '').trim();
-        const password = String(process.env.N8N_OWNER_PASSWORD || '');
-        const firstName = String(process.env.N8N_OWNER_FIRST_NAME || 'GovChat').trim();
-        const lastName = String(process.env.N8N_OWNER_LAST_NAME || 'Admin').trim();
-        const enforceOwner = String(process.env.N8N_OWNER_ENFORCE || 'true').trim().toLowerCase() === 'true';
-
-        async function waitForSettings(maxRetries = 30, delayMs = 2000) {
-          for (let i = 1; i <= maxRetries; i++) {
-            try {
-              const res = await fetch(base + '/rest/settings');
-              if (res.ok) return await res.json();
-            } catch (_) {
-              // retry
-            }
-            await new Promise((r) => setTimeout(r, delayMs));
-          }
-          throw new Error('n8n /rest/settings bleef onbereikbaar tijdens owner bootstrap');
-        }
-
-        if (!email || !password) {
-          console.log('[bootstrap] N8N owner bootstrap overgeslagen (N8N_OWNER_EMAIL/N8N_OWNER_PASSWORD leeg)');
-          process.exit(0);
-        }
-
-        async function loginCheck() {
-          const loginRes = await fetch(base + '/rest/login', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({
-              emailOrLdapLoginId: email,
-              password,
-            }),
-          });
-
-          if (!loginRes.ok) {
-            const body = await loginRes.text();
-            throw new Error('N8N owner-login check mislukt voor ' + email + ' (status ' + loginRes.status + '): ' + body);
-          }
-        }
-
-        async function setupOwner() {
-          const payload = { email, firstName, lastName, password };
-          const setupRes = await fetch(base + '/rest/owner/setup', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify(payload),
-          });
-
-          if (!setupRes.ok) {
-            const body = await setupRes.text();
-            throw new Error('Owner setup mislukt (status ' + setupRes.status + '): ' + body);
-          }
-
-          const verify = await waitForSettings();
-          const verifyShowSetup = Boolean(verify?.data?.userManagement?.showSetupOnFirstLoad);
-          if (verifyShowSetup) {
-            throw new Error('Owner setup leek gelukt, maar n8n geeft nog steeds setup-scherm terug');
-          }
-
-          console.log('[bootstrap] N8N owner aangemaakt en geverifieerd voor ' + email);
-        }
-
-        (async () => {
-          const settings = await waitForSettings();
-          const showSetup = Boolean(settings?.data?.userManagement?.showSetupOnFirstLoad);
-
-          if (!showSetup) {
-            console.log('[bootstrap] N8N owner bestaat al; setup wordt overgeslagen');
-            try {
-              await loginCheck();
-              console.log('[bootstrap] N8N owner-login check geslaagd voor ' + email);
-            } catch (err) {
-              if (!enforceOwner) throw err;
-              console.log('[bootstrap] Bestaande owner komt niet overeen met .env credentials; reset user-management en provision owner opnieuw');
-              execSync('n8n user-management:reset', { stdio: 'inherit' });
-              await setupOwner();
-              await loginCheck();
-              console.log('[bootstrap] N8N owner-login check geslaagd voor ' + email + ' (na reset)');
-            }
-          } else {
-            await setupOwner();
-            await loginCheck();
-            console.log('[bootstrap] N8N owner-login check geslaagd voor ' + email);
-          }
-        })().catch((err) => {
-          console.error(err);
-          process.exit(1);
-        });
-        NODE
-
-        if [ -z "$${LITELLM_API_KEY}" ]; then
-          echo "LITELLM_API_KEY ontbreekt; kan n8n credential niet bootstrap'en"
-          exit 1
-        fi
-
-        if [ -z "$${LITELLM_URL}" ]; then
-          echo "LITELLM_URL ontbreekt; kan n8n credential niet bootstrap'en"
-          exit 1
-        fi
-
-        cat > /tmp/litellm-openai-credential.json <<EOF
-        [
-          {
-            "id": "00000000-0000-4000-8000-000000000111",
-            "name": "LiteLLM API",
-            "type": "openAiApi",
-            "data": {
-              "apiKey": "$${LITELLM_API_KEY}",
-              "url": "$${LITELLM_URL%/}/v1"
-            }
-          }
-        ]
-        EOF
-
-        n8n import:credentials --input=/tmp/litellm-openai-credential.json
-
-        mkdir -p /tmp/agents/workflows
-
-        node - <<'NODE'
-        const fs = require('fs');
-        const path = require('path');
-
-        const source = String(process.env.AGENTS_WORKFLOW_SOURCE || 'github').trim().toLowerCase();
-        const base = String(process.env.AGENTS_RAW_BASE_URL || '').replace(/\/$/, '');
-        const files = Array.from(
-          new Set([
-            ...String(process.env.AGENTS_WORKFLOW_FILES || '')
-              .split(',')
-              .map((s) => s.trim())
-              .filter(Boolean),
-            'transcriptie-title-litellm.json',
-          ]),
-        );
-        const localDir = String(process.env.AGENTS_LOCAL_WORKFLOWS_DIR || '/workspace/GovChat-NL-Agents/n8n/workflows').trim();
-
-        if (!files.length) throw new Error('AGENTS_WORKFLOW_FILES bevat geen workflow-bestanden');
-
-        const outDir = '/tmp/agents/workflows';
-
-        async function download(fileName) {
-          const url = base + '/' + fileName;
-          const res = await fetch(url, { method: 'GET' });
-          if (!res.ok) throw new Error('Download mislukt (' + res.status + ') voor ' + url);
-          const body = await res.text();
-          const out = path.join(outDir, fileName);
-          fs.writeFileSync(out, body, 'utf8');
-          console.log('Downloaded ' + fileName);
-        }
-
-        function resolveLocalSourceDir() {
-          const candidates = [
-            localDir,
-          ].filter(Boolean);
-
-          for (const dir of candidates) {
-            const allPresent = files.every((fileName) => fs.existsSync(path.join(dir, fileName)));
-            if (allPresent) {
-              console.log('Using local workflow dir: ' + dir);
-              return dir;
-            }
-          }
-
-          return null;
-        }
-
-        function copyLocal(dir, fileName) {
-          const sourcePath = path.join(dir, fileName);
-          const body = fs.readFileSync(sourcePath, 'utf8');
-          const out = path.join(outDir, fileName);
-          fs.writeFileSync(out, body, 'utf8');
-          console.log('Copied local ' + fileName + ' from ' + dir);
-        }
-
-        (async () => {
-          if (source === 'local') {
-            const resolvedDir = resolveLocalSourceDir();
-            if (resolvedDir) {
-              for (const file of files) {
-                copyLocal(resolvedDir, file);
-              }
-              return;
-            }
-
-            if (!base) {
-              throw new Error(
-                'Lokale workflow-bron niet bruikbaar en AGENTS_RAW_BASE_URL ontbreekt voor fallback',
-              );
-            }
-
-            console.log('Lokale workflow-bestanden ontbreken; fallback naar GitHub RAW');
-            for (const file of files) {
-              await download(file);
-            }
-            return;
-          }
-
-          const resolvedDir = resolveLocalSourceDir();
-          if (!base && !resolvedDir) throw new Error('AGENTS_RAW_BASE_URL ontbreekt en geen lokale workflows gevonden');
-          for (const file of files) {
-            try {
-              if (!base) throw new Error('Geen AGENTS_RAW_BASE_URL ingesteld');
-              await download(file);
-            } catch (err) {
-              if (!resolvedDir) throw err;
-              console.log('Download mislukt voor ' + file + '; fallback naar lokaal bestand uit ' + resolvedDir);
-              copyLocal(resolvedDir, file);
-            }
-          }
-        })().catch((err) => {
-          console.error(err);
-          process.exit(1);
-        });
-        NODE
-
-        MARKER_FILE=/home/node/.n8n/.govchat-seeded-v5
-
-        FORCE="$(printf '%s' "$${AGENTS_BOOTSTRAP_FORCE:-false}" | tr '[:upper:]' '[:lower:]')"
-        if [ "$${FORCE}" = "true" ] || [ ! -f "$${MARKER_FILE}" ]; then
-          echo "[bootstrap] Import/publish workflows (force=$${FORCE})"
-          n8n import:workflow --input=/tmp/agents/workflows/versimpelaar-litellm.json
-          n8n import:workflow --input=/tmp/agents/workflows/orchestrator-litellm.json
-          n8n import:workflow --input=/tmp/agents/workflows/image-generator-litellm.json
-          if [ -f /tmp/agents/workflows/transcriptie-litellm.json ]; then
-            n8n import:workflow --input=/tmp/agents/workflows/transcriptie-litellm.json
-          fi
-          if [ -f /tmp/agents/workflows/transcriptie-title-litellm.json ]; then
-            n8n import:workflow --input=/tmp/agents/workflows/transcriptie-title-litellm.json
-          fi
-          if [ -f /tmp/agents/workflows/govcrawler-run.json ]; then
-            n8n import:workflow --input=/tmp/agents/workflows/govcrawler-run.json
-          fi
-          if [ -f /tmp/agents/workflows/beleidskompas-hoofdagent.json ]; then
-            n8n import:workflow --input=/tmp/agents/workflows/beleidskompas-hoofdagent.json
-          fi
-          if [ -f /tmp/agents/workflows/beleidskompas-step-stap1.json ]; then
-            n8n import:workflow --input=/tmp/agents/workflows/beleidskompas-step-stap1.json
-          fi
-          if [ -f /tmp/agents/workflows/beleidskompas-step-stap2.json ]; then
-            n8n import:workflow --input=/tmp/agents/workflows/beleidskompas-step-stap2.json
-          fi
-          if [ -f /tmp/agents/workflows/beleidskompas-step-stap3.json ]; then
-            n8n import:workflow --input=/tmp/agents/workflows/beleidskompas-step-stap3.json
-          fi
-          if [ -f /tmp/agents/workflows/beleidskompas-step-stap4.json ]; then
-            n8n import:workflow --input=/tmp/agents/workflows/beleidskompas-step-stap4.json
-          fi
-
-          # Verifieer dat workflows echt bestaan door export per id.
-          n8n export:workflow --id=govchat-versimpelaar-b1-litellm --output=/tmp/verify-versimpelaar.json
-          n8n export:workflow --id=govchat-orchestrator-litellm --output=/tmp/verify-orchestrator.json
-          n8n export:workflow --id=govchat-image-generator-litellm --output=/tmp/verify-image-generator.json
-          if [ -f /tmp/agents/workflows/transcriptie-litellm.json ]; then
-            n8n export:workflow --id=govchat-transcriptie-litellm --output=/tmp/verify-transcriptie.json
-          fi
-          if [ -f /tmp/agents/workflows/transcriptie-title-litellm.json ]; then
-            n8n export:workflow --id=govchat-transcriptie-title-litellm --output=/tmp/verify-transcriptie-title.json
-          fi
-          if [ -f /tmp/agents/workflows/govcrawler-run.json ]; then
-            n8n export:workflow --id=govchat-govcrawler-run --output=/tmp/verify-govcrawler-run.json
-          fi
-          if [ -f /tmp/agents/workflows/beleidskompas-hoofdagent.json ]; then
-            n8n export:workflow --id=govchat-beleidskompas-hoofdagent --output=/tmp/verify-beleidskompas-hoofdagent.json
-          fi
-          if [ -f /tmp/agents/workflows/beleidskompas-step-stap1.json ]; then
-            n8n export:workflow --id=govchat-beleidskompas-step-stap1 --output=/tmp/verify-beleidskompas-step-stap1.json
-          fi
-          if [ -f /tmp/agents/workflows/beleidskompas-step-stap2.json ]; then
-            n8n export:workflow --id=govchat-beleidskompas-step-stap2 --output=/tmp/verify-beleidskompas-step-stap2.json
-          fi
-          if [ -f /tmp/agents/workflows/beleidskompas-step-stap3.json ]; then
-            n8n export:workflow --id=govchat-beleidskompas-step-stap3 --output=/tmp/verify-beleidskompas-step-stap3.json
-          fi
-          if [ -f /tmp/agents/workflows/beleidskompas-step-stap4.json ]; then
-            n8n export:workflow --id=govchat-beleidskompas-step-stap4 --output=/tmp/verify-beleidskompas-step-stap4.json
-          fi
-
-          n8n publish:workflow --id=govchat-versimpelaar-b1-litellm
-          n8n publish:workflow --id=govchat-orchestrator-litellm
-          n8n publish:workflow --id=govchat-image-generator-litellm
-          if [ -f /tmp/agents/workflows/transcriptie-litellm.json ]; then
-            n8n publish:workflow --id=govchat-transcriptie-litellm
-          fi
-          if [ -f /tmp/agents/workflows/transcriptie-title-litellm.json ]; then
-            n8n publish:workflow --id=govchat-transcriptie-title-litellm
-          fi
-          if [ -f /tmp/agents/workflows/govcrawler-run.json ]; then
-            n8n publish:workflow --id=govchat-govcrawler-run
-          fi
-          if [ -f /tmp/agents/workflows/beleidskompas-hoofdagent.json ]; then
-            n8n publish:workflow --id=govchat-beleidskompas-hoofdagent
-          fi
-          if [ -f /tmp/agents/workflows/beleidskompas-step-stap1.json ]; then
-            n8n publish:workflow --id=govchat-beleidskompas-step-stap1
-          fi
-          if [ -f /tmp/agents/workflows/beleidskompas-step-stap2.json ]; then
-            n8n publish:workflow --id=govchat-beleidskompas-step-stap2
-          fi
-          if [ -f /tmp/agents/workflows/beleidskompas-step-stap3.json ]; then
-            n8n publish:workflow --id=govchat-beleidskompas-step-stap3
-          fi
-          if [ -f /tmp/agents/workflows/beleidskompas-step-stap4.json ]; then
-            n8n publish:workflow --id=govchat-beleidskompas-step-stap4
-          fi
-
-          touch "$${MARKER_FILE}"
-          echo "[bootstrap] Workflow import/publish geverifieerd"
-        else
-          echo "[bootstrap] Skip import/publish (already seeded; set AGENTS_BOOTSTRAP_FORCE=true to force)"
-        fi
+      - ./agents:/workspace/agents:ro
+      - ./n8n/bootstrap.js:/bootstrap/bootstrap.js:ro
+    entrypoint: ["node", "/bootstrap/bootstrap.js"]
     networks:
       - librechat-net
 
-  # ---------------------------------------------------------------------------
-  #  n8n OpenAI Bridge - OpenAI-compatibele laag tussen LibreChat en n8n
-  # ---------------------------------------------------------------------------
   n8n-openai-bridge:
-    image: ghcr.io/sveneisenschmidt/n8n-openai-bridge:pr-72
+    # Pinned OCI index digest: ghcr.io/sveneisenschmidt/n8n-openai-bridge:pr-72
+    # Resolve a future GovChat-NL release here only after compatibility testing.
+    image: ghcr.io/sveneisenschmidt/n8n-openai-bridge@sha256:d61947deaa1b094d03fbdb268fbaf9f35766a792c8776d8014bf7d1188f0232d
     container_name: n8n-openai-bridge
     restart: unless-stopped
     depends_on:
@@ -914,7 +590,7 @@ services:
       USER_NAME_HEADERS: ${N8N_OPENAI_BRIDGE_USER_NAME_HEADERS:-X-User-Name,X-OpenWebUI-User-Name}
       USER_ROLE_HEADERS: ${N8N_OPENAI_BRIDGE_USER_ROLE_HEADERS:-X-User-Role,X-OpenWebUI-User-Role}
     volumes:
-      - ./n8n-openai-bridge/models.json:/app/models.json:ro
+      - ./bridge/models.json:/app/models.json:ro
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3333/health"]
       interval: 30s
@@ -1021,7 +697,7 @@ services:
   # ---------------------------------------------------------------------------
   govchat-overlay-admin:
     build:
-      context: ../GovChat-AdminOverlay/admin
+      context: ./services/admin-overlay/admin
       dockerfile: Dockerfile
     image: govchat-overlay-admin:local
     container_name: govchat-overlay-admin

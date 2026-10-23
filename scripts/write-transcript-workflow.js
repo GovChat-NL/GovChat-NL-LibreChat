@@ -130,6 +130,6 @@ const workflow = [
   }
 ];
 
-const outPath = path.resolve(__dirname, '../../GovChat-NL-Agents/n8n/workflows/transcriptie-litellm.json');
+const outPath = path.resolve(__dirname, '../agents/n8n/workflows/transcriptie-litellm.json');
 fs.writeFileSync(outPath, JSON.stringify(workflow, null, 2) + '\n', 'utf8');
 console.log(`Wrote ${outPath}`);

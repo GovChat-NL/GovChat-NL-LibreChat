@@ -1,0 +1,11 @@
+# Dependencies
+admin/node_modules/
+
+# Local env files
+.env
+admin/.env
+
+# OS / editor
+.DS_Store
+Thumbs.db
+

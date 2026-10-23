@@ -1,0 +1,29 @@
+# Agent-workflows
+
+> [!WARNING]
+> **Status: niet productierijp / niet gegarandeerd werkend.** Dit zijn referentieworkflows die aanvullende validatie, security review en beheerafspraken vereisen.
+
+Deze directory is de monorepo-bron van waarheid voor GovChat-NL n8n-workflows. De historie van de voormalige `GovChat-NL-Agents` repository is opgenomen via Git subtree; wijzigingen worden voortaan hier beheerd en mee gereviewd met de deployment/runtime waarvoor ze bedoeld zijn.
+
+## Integratie
+
+- Workflows: [`n8n/workflows/`](n8n/workflows/).
+- Compose mount de directory read-only op `/workspace/agents`; `n8n-bootstrap` importeert uit `/workspace/agents/n8n/workflows`.
+- Bootstrap scant alle top-level `.json`-bestanden in deze map, valideert JSON en stabiele IDs, en importeert/publiceert ze; er is geen handmatige lijst of sibling-checkout nodig.
+- De bootstrap maakt de `LiteLLM API` credential aan. Workflows gebruiken `${LITELLM_URL}/v1` en `${LITELLM_API_KEY}`.
+
+## Verzoekroute en modelroute
+
+1. LibreChat stuurt een OpenAI-compatible verzoek naar de afzonderlijke bridge.
+2. De bridge routeert `govchat-orchestrator` naar de n8n `orchestrator` webhook.
+3. De orchestrator gebruikt de volledige berichtenhistorie en roept specialisten zoals de B1-versimpelaar als interne tools aan.
+4. n8n roept LiteLLM rechtstreeks aan; dit modelverkeer loopt niet door de bridge.
+5. De streamed webhookrespons gaat terug via de bridge. Native live tool-cards zijn het beoogde lifecyclegedrag, maar de bijbehorende runtimepatches zijn niet opgenomen in deze migratiebranch; zie [`../docs/live-tool-calling.md`](../docs/live-tool-calling.md).
+
+## Wijzigingen en workflow-ID's
+
+- Houd workflow-`id` stabiel om bestaande workflow-imports bij te werken; verander IDs alleen bewust.
+- Wijzigingen aan workflow-JSON worden in deze checkout gedaan en vervolgens via de normale monorepo review uitgerold.
+- Controleer structuur/JSON met `node tests/agents/validate-workflows.js`.
+- Zie [`CONTRIBUTING.md`](CONTRIBUTING.md) voor bijdragen.
+
