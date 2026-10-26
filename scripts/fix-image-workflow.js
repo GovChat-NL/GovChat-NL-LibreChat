@@ -110,7 +110,7 @@ const baseRaw = String($env.N8N_LITELLM_IMAGE_BASE_URL || $env.LITELLM_URL || 'h
 const apiBase = baseRaw.endsWith('/') ? baseRaw.slice(0, -1) : baseRaw;
 const apiKey = String($env.N8N_LITELLM_IMAGE_API_KEY || $env.LITELLM_API_KEY || '').trim();
 const model = String($env.N8N_LITELLM_IMAGE_MODEL || 'gpt-image-1').trim();
-const apiVersion = String($env.N8N_LITELLM_IMAGE_API_VERSION || '2024-02-01').trim();
+const apiVersion = String($env.N8N_LITELLM_IMAGE_API_VERSION || '2025-04-01-preview').trim();
 
 if (!enabled) {
   return [{

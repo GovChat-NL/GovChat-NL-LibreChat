@@ -38,7 +38,7 @@
       },
       {
         "parameters": {
-          "jsCode": "const raw = $json || {};\nconst isObj = (v) => v && typeof v === 'object' && !Array.isArray(v);\nconst asString = (v) => (typeof v === 'string' ? v.trim() : '');\n\nconst body = isObj(raw.body) ? raw.body : raw;\nconst headers = isObj(raw.headers) ? raw.headers : {};\n\nconst expectedToken = String($env.N8N_WEBHOOK_TOKEN || '').trim();\nconst hasWebhookShape = !!raw.body || Object.keys(headers).length > 0;\n\nif (hasWebhookShape) {\n  const headerToken = String(headers['x-govchat-token'] || headers['X-Govchat-Token'] || '').trim();\n  const authHeader = String(headers.authorization || headers.Authorization || '').trim();\n  const bearerToken = authHeader.toLowerCase().startsWith('bearer ')\n    ? authHeader.slice(7).trim()\n    : '';\n  const suppliedToken = headerToken || bearerToken;\n\n  if (!expectedToken) throw new Error('Server misconfiguratie: N8N_WEBHOOK_TOKEN ontbreekt');\n  if (!suppliedToken || suppliedToken !== expectedToken) throw new Error('Unauthorized webhook token');\n}\n\nfunction fromMessages(messages) {\n  if (!Array.isArray(messages) || !messages.length) return '';\n  for (let i = messages.length - 1; i >= 0; i--) {\n    const m = messages[i] || {};\n    const direct = asString(m.content) || asString(m.text) || asString(m.prompt) || asString(m.input);\n    if (direct) return direct;\n    if (Array.isArray(m.content)) {\n      const joined = m.content\n        .map((part) => {\n          if (!part) return '';\n          if (typeof part === 'string') return part;\n          return asString(part.text) || asString(part.content) || '';\n        })\n        .filter(Boolean)\n        .join(' ')\n        .trim();\n      if (joined) return joined;\n    }\n  }\n  return '';\n}\n\nconst candidates = [\n  asString(body.prompt),\n  asString(body.text),\n  asString(body.input),\n  asString(body.query),\n  asString(body.message),\n  asString(body.user_input),\n  asString(body.request),\n  asString(body.instruction),\n  isObj(body.data) ? asString(body.data.prompt) || asString(body.data.text) || asString(body.data.input) : '',\n  isObj(body.arguments)\n    ? asString(body.arguments.prompt) || asString(body.arguments.text) || asString(body.arguments.input)\n    : '',\n  isObj(body.args) ? asString(body.args.prompt) || asString(body.args.text) || asString(body.args.input) : '',\n  isObj(raw.toolInput)\n    ? asString(raw.toolInput.prompt) || asString(raw.toolInput.text) || asString(raw.toolInput.input)\n    : '',\n  isObj(raw.input) ? asString(raw.input.prompt) || asString(raw.input.text) || asString(raw.input.input) : '',\n  isObj(raw.parameters)\n    ? asString(raw.parameters.prompt) || asString(raw.parameters.text) || asString(raw.parameters.input)\n    : '',\n  fromMessages(body.messages),\n  fromMessages(raw.messages),\n].filter(Boolean);\n\nconst prompt = (candidates[0] || '').trim();\nif (!prompt) {\n  const hint = Object.keys(body).slice(0, 12).join(',');\n  throw new Error('Afbeelding-tool vereist een prompt (ontvangen keys: ' + hint + ')');\n}\n\nconst requestedSize = (asString(body.size) || asString(raw.size) || '').toLowerCase();\nconst requestedQuality = (asString(body.quality) || asString(raw.quality) || '').toLowerCase();\nconst enabled = String($env.N8N_ENABLE_IMAGE_TOOL || 'false').toLowerCase() === 'true';\nif (!enabled) throw new Error('Afbeelding-generatie staat uit (N8N_ENABLE_IMAGE_TOOL=false)');\n\nconst baseRaw = String($env.N8N_LITELLM_IMAGE_BASE_URL || $env.LITELLM_URL || 'http://litellm:4000').trim();\nconst apiBase = baseRaw.endsWith('/') ? baseRaw.slice(0, -1) : baseRaw;\nconst apiKey = String($env.N8N_LITELLM_IMAGE_API_KEY || $env.LITELLM_API_KEY || '').trim();\nconst model = String($env.N8N_LITELLM_IMAGE_MODEL || 'gpt-image-1').trim();\nconst apiVersion = String($env.N8N_LITELLM_IMAGE_API_VERSION || '2024-02-01').trim();\n\nif (!enabled) {\n  return [{\n    json: {\n      image_disabled: true,\n      disabled_reason: 'Afbeelding-generatie staat uit (N8N_ENABLE_IMAGE_TOOL=false).',\n      // Call node draait met continueOnFail=true en zal op deze URL direct falen,\n      // waarna Build Image Response een nette, niet-fatale melding teruggeeft.\n      generateUrl: 'http://127.0.0.1:9/disabled',\n      requestBody: {},\n      apiKey: '',\n      isAzureDeploymentPath: false,\n      prompt,\n      size,\n      quality,\n      model,\n      apiBase,\n    },\n  }];\n}\n\nif (!apiKey) throw new Error('LITELLM_API_KEY ontbreekt');\n\nconst modelLc = model.toLowerCase();\nconst isGptImage = modelLc.includes('gpt-image');\nconst isDalle3 = modelLc.includes('dall-e-3');\nconst isDalle2 = modelLc.includes('dall-e-2');\n\nfunction normalizeQuality(input) {\n  if (isGptImage) {\n    const allowed = new Set(['auto', 'low', 'medium', 'high']);\n    if (!input || input === 'standard') return 'auto';\n    if (input === 'hd') return 'high';\n    return allowed.has(input) ? input : 'auto';\n  }\n\n  if (isDalle3) {\n    const allowed = new Set(['standard', 'hd']);\n    if (!input || input === 'auto') return 'standard';\n    if (input === 'low' || input === 'medium') return 'standard';\n    if (input === 'high') return 'hd';\n    return allowed.has(input) ? input : 'standard';\n  }\n\n  if (isDalle2) {\n    return 'standard';\n  }\n\n  return input || 'auto';\n}\n\nfunction normalizeSize(input) {\n  if (isGptImage) {\n    const allowed = new Set(['auto', '1024x1024', '1536x1024', '1024x1536']);\n    return allowed.has(input) ? input : 'auto';\n  }\n\n  if (isDalle3) {\n    const allowed = new Set(['1024x1024', '1792x1024', '1024x1792']);\n    return allowed.has(input) ? input : '1024x1024';\n  }\n\n  if (isDalle2) {\n    const allowed = new Set(['256x256', '512x512', '1024x1024']);\n    return allowed.has(input) ? input : '1024x1024';\n  }\n\n  return input || '1024x1024';\n}\n\nconst size = normalizeSize(requestedSize);\nconst quality = normalizeQuality(requestedQuality);\n\nconst isAzureDeploymentPath = apiBase.toLowerCase().includes('/openai/deployments/');\nconst generateUrl = isAzureDeploymentPath\n  ? apiBase + '/images/generations?api-version=' + encodeURIComponent(apiVersion)\n  : apiBase + '/v1/images/generations';\n\nconst requestBody = isAzureDeploymentPath\n  ? { prompt, size, quality }\n  : { model, prompt, size, quality };\n\nreturn [{\n  json: {\n    prompt,\n    size,\n    quality,\n    model,\n    apiBase,\n    apiKey,\n    isAzureDeploymentPath,\n    generateUrl,\n    requestBody,\n  },\n}];"
+          "jsCode": "const raw = $json || {};\nconst isObj = (v) => v && typeof v === 'object' && !Array.isArray(v);\nconst asString = (v) => (typeof v === 'string' ? v.trim() : '');\nconst body = isObj(raw.body) ? raw.body : raw;\nconst headers = isObj(raw.headers) ? raw.headers : {};\n\nconst expectedToken = String($env.N8N_WEBHOOK_TOKEN || '').trim();\nconst hasWebhookShape = !!raw.body || Object.keys(headers).length > 0;\nif (hasWebhookShape) {\n  const headerToken = String(headers['x-govchat-token'] || headers['X-Govchat-Token'] || '').trim();\n  const authHeader = String(headers.authorization || headers.Authorization || '').trim();\n  const bearerToken = authHeader.toLowerCase().startsWith('bearer ') ? authHeader.slice(7).trim() : '';\n  const suppliedToken = headerToken || bearerToken;\n  if (!expectedToken) throw new Error('Server misconfiguratie: N8N_WEBHOOK_TOKEN ontbreekt');\n  if (!suppliedToken || suppliedToken !== expectedToken) throw new Error('Unauthorized webhook token');\n}\n\nfunction fromMessages(messages) {\n  if (!Array.isArray(messages)) return '';\n  for (let i = messages.length - 1; i >= 0; i--) {\n    const message = messages[i] || {};\n    const content = message.content;\n    if (typeof content === 'string' && content.trim()) return content.trim();\n    if (Array.isArray(content)) {\n      const text = content.map((part) => typeof part === 'string' ? part : asString(part?.text))\n        .filter(Boolean).join(' ').trim();\n      if (text) return text;\n    }\n  }\n  return '';\n}\n\nfunction parseObject(value) {\n  if (isObj(value)) return value;\n  if (typeof value !== 'string') return {};\n  try {\n    const parsed = JSON.parse(value);\n    return isObj(parsed) ? parsed : {};\n  } catch (_) {\n    return {};\n  }\n}\n\nconst queryArgs = parseObject(body.query ?? raw.query);\nconst nested = [body.data, body.arguments, body.args, raw.toolInput, raw.input, raw.parameters, queryArgs].filter(isObj);\nconst queryPrompt = Object.keys(queryArgs).length ? queryArgs.prompt : body.query;\nconst candidates = [body.prompt, body.text, body.input, queryPrompt, body.message, body.user_input,\n  body.request, body.instruction, ...nested.flatMap((item) => [item.prompt, item.text, item.input]),\n  fromMessages(body.messages), fromMessages(raw.messages)].map(asString).filter(Boolean);\nconst prompt = candidates[0] || '';\nif (!prompt) throw new Error('Afbeelding-tool vereist een prompt');\n\nconst source = body.image ?? body.source_image ?? body.input_image ?? body.image_url ??\n  body.data?.image ?? body.arguments?.image ?? body.args?.image ?? queryArgs.image ?? queryArgs.source_image ??\n  queryArgs.input_image ?? queryArgs.image_url;\nconst sourceValue = typeof source === 'string' ? source :\n  (isObj(source) ? asString(source.url) || asString(source.data) : '');\nconst isEdit = !!sourceValue;\n\nconst requestedSize = (asString(body.size) || asString(raw.size) || '').toLowerCase();\nconst requestedQuality = (asString(body.quality) || asString(raw.quality) || '').toLowerCase();\nconst enabled = String($env.N8N_ENABLE_IMAGE_TOOL || 'false').toLowerCase() === 'true';\nconst baseRaw = String($env.N8N_LITELLM_IMAGE_BASE_URL || $env.LITELLM_URL || 'http://litellm:4000').trim();\nconst apiBase = baseRaw.replace(/\\/$/, '');\nconst apiKey = String($env.N8N_LITELLM_IMAGE_API_KEY || $env.LITELLM_API_KEY || '').trim();\nconst model = String($env.N8N_LITELLM_IMAGE_MODEL || 'gpt-image-1').trim();\nconst apiVersion = String($env.N8N_LITELLM_IMAGE_API_VERSION || '2025-04-01-preview').trim();\nconst modelLc = model.toLowerCase();\nconst isGptImage = modelLc.includes('gpt-image');\nconst isDalle3 = modelLc.includes('dall-e-3');\nconst isDalle2 = modelLc.includes('dall-e-2');\n\nfunction normalizeQuality(input) {\n  if (isGptImage) return ({ standard: 'auto', hd: 'high' })[input] || (['auto', 'low', 'medium', 'high'].includes(input) ? input : 'auto');\n  if (isDalle3) return ({ auto: 'standard', low: 'standard', medium: 'standard', high: 'hd' })[input] || (['standard', 'hd'].includes(input) ? input : 'standard');\n  return isDalle2 ? 'standard' : (input || 'auto');\n}\nfunction normalizeSize(input) {\n  if (isGptImage) return ['auto', '1024x1024', '1536x1024', '1024x1536'].includes(input) ? input : 'auto';\n  if (isDalle3) return ['1024x1024', '1792x1024', '1024x1792'].includes(input) ? input : '1024x1024';\n  if (isDalle2) return ['256x256', '512x512', '1024x1024'].includes(input) ? input : '1024x1024';\n  return input || '1024x1024';\n}\nconst size = normalizeSize(requestedSize);\nconst quality = normalizeQuality(requestedQuality);\nconst isAzureDeploymentPath = apiBase.toLowerCase().includes('/openai/deployments/');\nconst generateUrl = isAzureDeploymentPath\n  ? apiBase + '/images/generations?api-version=' + encodeURIComponent(apiVersion)\n  : apiBase + '/v1/images/generations';\nconst editUrl = isAzureDeploymentPath\n  ? apiBase + '/images/edits?api-version=' + encodeURIComponent(apiVersion)\n  : apiBase + '/v1/images/edits';\n\nif (!enabled) {\n  return [{ json: { image_disabled: true, disabled_reason: 'Afbeelding-generatie staat uit (N8N_ENABLE_IMAGE_TOOL=false).',\n    generateUrl: 'http://127.0.0.1:9/disabled', editUrl: 'http://127.0.0.1:9/disabled', requestBody: {},\n    apiKey: '', isAzureDeploymentPath, prompt, size, quality, model, isEdit } }];\n}\nif (!apiKey) throw new Error('LITELLM_API_KEY ontbreekt');\n\nconst item = { prompt, size, quality, model, apiBase, apiKey, isAzureDeploymentPath, generateUrl, editUrl, isEdit };\nif (!isEdit) {\n  item.requestBody = isAzureDeploymentPath ? { prompt, size, quality } : { model, prompt, size, quality };\n  return [{ json: item }];\n}\n\nif (!isGptImage && !isDalle2) {\n  throw new Error('Het ingestelde imagemodel ondersteunt geen image-to-image edits. Gebruik gpt-image-1 of dall-e-2.');\n}\n\nlet imageBuffer;\nlet mimeType = 'image/png';\nlet fileName = 'source.png';\nif (sourceValue.startsWith('data:')) {\n  const match = sourceValue.match(/^data:(image\\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/i);\n  if (!match) throw new Error('Bronafbeelding moet een base64 data-URL zijn van een PNG, JPEG of WebP');\n  mimeType = match[1].toLowerCase();\n  fileName = mimeType === 'image/jpeg' ? 'source.jpg' : (mimeType === 'image/webp' ? 'source.webp' : 'source.png');\n  imageBuffer = Buffer.from(match[2], 'base64');\n} else if (sourceValue.startsWith('https://')) {\n  const remoteUrl = new URL(sourceValue);\n  if (!remoteUrl.hostname || remoteUrl.hostname.includes(':') || /^(localhost|.*\\.local$|127\\.|10\\.|192\\.168\\.|169\\.254\\.|172\\.(1[6-9]|2[0-9]|3[01])\\.)/i.test(remoteUrl.hostname)) {\n    throw new Error('De URL van de bronafbeelding is niet toegestaan');\n  }\n  const response = await fetch(remoteUrl.href);\n  if (!response.ok) throw new Error('De bronafbeelding kon niet worden opgehaald (HTTP ' + response.status + ')');\n  const contentType = String(response.headers.get('content-type') || '').toLowerCase();\n  if (!['image/png', 'image/jpeg', 'image/webp'].some((type) => contentType.includes(type))) {\n    throw new Error('De opgehaalde URL bevat geen ondersteund afbeeldingsformaat');\n  }\n  mimeType = contentType.includes('image/jpeg') ? 'image/jpeg' : (contentType.includes('image/webp') ? 'image/webp' : 'image/png');\n  fileName = mimeType === 'image/jpeg' ? 'source.jpg' : (mimeType === 'image/webp' ? 'source.webp' : 'source.png');\n  imageBuffer = Buffer.from(await response.arrayBuffer());\n} else {\n  const fs = require('fs');\n  const path = require('path');\n  const candidateName = path.basename(sourceValue.split(/[?#]/)[0]);\n  if (!/^generated-[a-zA-Z0-9-]+\\.(?:png|jpe?g|webp)$/i.test(candidateName)) {\n    throw new Error('Alleen gegenereerde afbeeldingen uit deze chat kunnen via een afbeeldings-URL worden bewerkt');\n  }\n  const localPath = path.join('/shared-images', candidateName);\n  if (!fs.existsSync(localPath)) throw new Error('De bronafbeelding is niet meer beschikbaar voor bewerking');\n  imageBuffer = fs.readFileSync(localPath);\n  const ext = path.extname(candidateName).toLowerCase();\n  mimeType = ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : (ext === '.webp' ? 'image/webp' : 'image/png');\n  fileName = candidateName;\n}\nif (!imageBuffer?.length || imageBuffer.length > 50 * 1024 * 1024) throw new Error('Bronafbeelding is leeg of groter dan 50 MB');\nconst imageBinary = await this.helpers.prepareBinaryData(imageBuffer, fileName, mimeType);\nreturn [{ json: item, binary: { image: imageBinary } }];"
         },
         "id": "PrepareImageRequest",
         "name": "Prepare Image Request",
@@ -89,7 +89,7 @@
       },
       {
         "parameters": {
-          "jsCode": "const arr = Array.isArray($json.data) ? $json.data : [];\nconst first = arr[0] || {};\n\nif ($json.image_disabled || $json.disabled_reason) {\n  return [{\n    json: {\n      response: 'Afbeelding-generatie is momenteel uitgeschakeld door de beheerder.',\n      image_url: null,\n      has_base64: false,\n      image_disabled: true,\n    },\n  }];\n}\n\nif ($json.error) {\n  const message = String($json.error?.message || $json.error || '').trim();\n  return [{\n    json: {\n      response: message ? 'Afbeelding-generatie mislukt: ' + message : 'Afbeelding-generatie mislukt.',\n      image_url: null,\n      has_base64: false,\n      image_error: true,\n    },\n  }];\n}\n\nconst httpUrl = String(first.url || '').trim();\nconst b64 = String(first.b64_json || '').trim();\nconst publicBase = String($env.PUBLIC_BASE_URL || '').replace(/\\/$/, '');\n\nif (httpUrl) {\n  const markdown = '![gegenereerde afbeelding](' + httpUrl + ')';\n  return [{\n    json: {\n      response: markdown,\n      image_url: httpUrl,\n      markdown,\n      has_base64: false,\n    },\n  }];\n}\n\nif (b64) {\n  const fs = require('fs');\n  const path = require('path');\n  const crypto = require('crypto');\n  const fileName = 'generated-' + Date.now() + '-' + crypto.randomUUID() + '.png';\n  const outDir = '/shared-images';\n  fs.mkdirSync(outDir, { recursive: true });\n  const outPath = path.join(outDir, fileName);\n  fs.writeFileSync(outPath, Buffer.from(b64, 'base64'));\n\n  const imageUrl = publicBase\n    ? publicBase + '/images/' + fileName\n    : '/images/' + fileName;\n  const markdown = '![gegenereerde afbeelding](' + imageUrl + ')';\n\n  return [{\n    json: {\n      response: markdown,\n      image_url: imageUrl,\n      markdown,\n      has_base64: true,\n      base64_length: b64.length,\n      stored_file: fileName,\n    },\n  }];\n}\n\nthrow new Error('Geen afbeelding URL/b64 ontvangen van image API');"
+          "jsCode": "const arr = Array.isArray($json.data) ? $json.data : [];\nconst first = arr[0] || {};\n\nif ($json.image_disabled || $json.disabled_reason) {\n  return [{ json: { response: 'Afbeelding-generatie is momenteel uitgeschakeld door de beheerder.', image_url: null, has_base64: false, image_disabled: true } }];\n}\nif ($json.error) {\n  const message = String($json.error?.message || $json.error || '').trim();\n  return [{ json: { response: message ? 'Afbeelding-generatie mislukt: ' + message : 'Afbeelding-generatie mislukt.', image_url: null, has_base64: false, image_error: true } }];\n}\n\nconst httpUrl = String(first.url || '').trim();\nconst b64 = String(first.b64_json || '').trim();\nconst fs = require('fs');\nconst path = require('path');\nconst crypto = require('crypto');\nconst publicBase = String($env.PUBLIC_BASE_URL || '').replace(/\\/$/, '');\nconst outDir = '/shared-images';\nfs.mkdirSync(outDir, { recursive: true });\nlet outputBuffer;\nlet extension = 'png';\n\nif (b64) {\n  outputBuffer = Buffer.from(b64, 'base64');\n} else if (httpUrl) {\n  const response = await fetch(httpUrl);\n  if (!response.ok) throw new Error('Image API gaf een onbereikbare afbeeldings-URL terug (HTTP ' + response.status + ')');\n  const contentType = String(response.headers.get('content-type') || '').toLowerCase();\n  extension = contentType.includes('jpeg') ? 'jpg' : (contentType.includes('webp') ? 'webp' : 'png');\n  outputBuffer = Buffer.from(await response.arrayBuffer());\n} else {\n  throw new Error('Geen afbeelding URL/b64 ontvangen van image API');\n}\n\nif (!outputBuffer.length || outputBuffer.length > 50 * 1024 * 1024) throw new Error('Afbeelding is leeg of groter dan 50 MB');\nconst fileName = 'generated-' + Date.now() + '-' + crypto.randomUUID() + '.' + extension;\nfs.writeFileSync(path.join(outDir, fileName), outputBuffer);\nconst imageUrl = (publicBase || '') + '/images/' + fileName;\nconst markdown = '![gegenereerde afbeelding](' + imageUrl + ')';\nreturn [{ json: { response: markdown, image_url: imageUrl, markdown, has_base64: !!b64, stored_file: fileName } }];"
         },
         "id": "BuildImageResponse",
         "name": "Build Image Response",
@@ -97,6 +97,98 @@
         "typeVersion": 2,
         "position": [
           -220,
+          220
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "={{ $json.editUrl }}",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "={{ $json.isAzureDeploymentPath ? '' : ('Bearer ' + $json.apiKey) }}"
+              },
+              {
+                "name": "api-key",
+                "value": "={{ $json.isAzureDeploymentPath ? $json.apiKey : \"\" }}"
+              }
+            ]
+          },
+          "sendBody": true,
+          "contentType": "multipart-form-data",
+          "bodyParameters": {
+            "parameters": [
+              {
+                "name": "model",
+                "value": "={{ $json.isAzureDeploymentPath ? \"\" : $json.model }}"
+              },
+              {
+                "name": "prompt",
+                "value": "={{ $json.prompt }}"
+              },
+              {
+                "name": "size",
+                "value": "={{ $json.size }}"
+              },
+              {
+                "name": "quality",
+                "value": "={{ $json.model.toLowerCase().includes(\"gpt-image\") ? $json.quality : \"\" }}"
+              },
+              {
+                "parameterType": "formBinaryData",
+                "name": "image",
+                "inputDataFieldName": "image"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 180000
+          }
+        },
+        "id": "CallImageEditApi",
+        "name": "Call Image Edit API",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          -480,
+          420
+        ],
+        "continueOnFail": true
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "is-image-edit",
+                "leftValue": "={{ $json.isEdit }}",
+                "rightValue": true,
+                "operator": {
+                  "type": "boolean",
+                  "operation": "true",
+                  "singleValue": true
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "RouteImageRequest",
+        "name": "Route Image Request",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          -600,
           220
         ]
       }
@@ -128,7 +220,7 @@
         "main": [
           [
             {
-              "node": "Call Images API",
+              "node": "Route Image Request",
               "type": "main",
               "index": 0
             }
@@ -136,6 +228,35 @@
         ]
       },
       "Call Images API": {
+        "main": [
+          [
+            {
+              "node": "Build Image Response",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Route Image Request": {
+        "main": [
+          [
+            {
+              "node": "Call Image Edit API",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "Call Images API",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Call Image Edit API": {
         "main": [
           [
             {

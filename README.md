@@ -256,7 +256,7 @@ Werkwijze:
 
 ## Afbeeldingen via orchestrator (optioneel, centraal configureerbaar)
 
-De orchestrator kan optioneel een image-tool gebruiken die via LiteLLM naar `/v1/images/generations` gaat.
+De orchestrator kan optioneel afbeeldingen genereren via LiteLLM (`/v1/images/generations`) en bestaande afbeeldingen bewerken via `/v1/images/edits`.
 
 ### Configuratie in [`.env`](.env)
 
@@ -267,15 +267,19 @@ De orchestrator kan optioneel een image-tool gebruiken die via LiteLLM naar `/v1
   - apart image-endpoint (fallback: `LITELLM_URL`)
 - `N8N_LITELLM_IMAGE_API_KEY`
   - aparte image-sleutel (fallback: `LITELLM_API_KEY`)
+- `N8N_LITELLM_IMAGE_API_VERSION`
+  - Azure image API-versie (default: `2025-04-01-preview`; oudere versies kunnen `/images/edits` als 404 teruggeven)
 - `N8N_LITELLM_IMAGE_MODEL`
-  - image-model (default: `gpt-image-1`)
+  - image-model (default: `gpt-image-1`; GPT Image-modellen en `dall-e-2` ondersteunen bewerkingen)
+- `N8N_ORCHESTRATOR_VISION_MODEL`
+  - LiteLLM chat/vision-model dat de laatste vraag en chatcontext dynamisch classificeert als bewerken, analyseren of nieuwe afbeelding maken; geen vaste talen- of trefwoordenlijst
 
 Deze waarden worden via Compose doorgegeven aan zowel `n8n` als `n8n-runners` in [`docker-compose.yml`](docker-compose.yml).
 
-### Runtime vereisten voor image generation
+### Runtime vereisten voor image generation en editing
 
 1. **JS runner modules toegestaan**
-   - [`n8n/task-runners.json`](n8n/task-runners.json) zet `NODE_FUNCTION_ALLOW_BUILTIN` op `fs,path,crypto`.
+   - [`n8n/task-runners.json`](n8n/task-runners.json) geeft de image-configuratie en webhook-token door aan de JavaScript runner.
    - Deze file is gemount in `n8n-runners` in [`docker-compose.yml`](docker-compose.yml).
 
 2. **Gedeelde image map beschikbaar**
@@ -285,11 +289,14 @@ Deze waarden worden via Compose doorgegeven aan zowel `n8n` als `n8n-runners` in
 3. **Publieke URL opbouw**
    - workflow gebruikt `PUBLIC_BASE_URL` om `/images/<bestand>.png` links te genereren.
 
-### Gedrag bij output
+### Gedrag bij output en bewerken
 
-- Bij normale URL-output van model: workflow retourneert direct markdown `![gegenereerde afbeelding](...)`.
-- Bij base64-output: workflow schrijft PNG naar `/shared-images` en retourneert ook markdown URL.
+- Genereerde afbeeldingen worden lokaal opgeslagen in `/shared-images`, ook wanneer LiteLLM een tijdelijke afbeeldings-URL teruggeeft. Daardoor zijn ze bij een vervolgvraag beschikbaar als bronafbeelding.
 - Hierdoor kan LibreChat de afbeelding inline renderen in plaats van alleen tekst te tonen.
+- Een upload kan in dezelfde vraag worden bewerkt; bij een vervolgvraag kan de meest recente afbeelding uit de chat worden aangepast. De intent wordt met het geconfigureerde chat/vision-model uit de volledige recente context bepaald, niet met een vaste trefwoordenlijst. De orchestrator stuurt de feitelijke image-bytes mee naar het multipart image-edit endpoint; alleen de prompt wordt dus niet als bewerking behandeld.
+- Image edits worden via de `image_generation_tool` van de agent uitgevoerd. De gebruiker ziet daardoor tijdens de bewerking de tool-call en de bijbehorende status in LibreChat.
+- Bewerkte output wordt net als nieuwe output opgeslagen in `/shared-images`, zodat verdere bewerkingen mogelijk zijn.
+- De externe n8n runner moet de interne image-webhook kunnen bereiken. Compose geeft hiervoor `N8N_WEBHOOK_TOKEN` en `N8N_IMAGE_GENERATOR_WEBHOOK_URL` door.
 
 ### Asynchrone image-jobs met tussentijdse status (aanbevolen)
 
