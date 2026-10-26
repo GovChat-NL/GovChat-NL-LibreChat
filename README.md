@@ -323,27 +323,6 @@ De loader toont tijdens polling statusberichten in het Nederlands, zoals:
 - “Je afbeelding wordt nu gegenereerd.”
 - “Je afbeelding is klaar.”
 
-### Chat image-statusmeldingen configureerbaar via Admin (apps.json)
-
-De inline statusmeldingen in de chat zijn configureerbaar via `apps.json` (en dus via de Apps-editor in GovChat Admin):
-
-```json
-{
-  "chat_image_status": {
-    "enabled": true,
-    "first_message": "Afbeelding wordt gegenereerd. Dit duurt meestal 10–40 seconden.",
-    "second_message": "Nog bezig met genereren. De afbeelding verschijnt hier zodra deze klaar is.",
-    "second_delay_ms": 40000
-  }
-}
-```
-
-Notities:
-
-- `enabled=false` schakelt deze chat-statusmeldingen uit.
-- `second_delay_ms` wordt server-side begrensd op 5000–300000 ms.
-- Bij render van de afbeelding verdwijnt de statusmelding automatisch.
-
 ## Overheidscrawler (allowlist + robots.txt) via GovChat Admin + n8n
 
 > ⚠️ **Let op (experimenteel):** de webcrawler is op dit moment een **experimentele feature** en nog **ver van af / niet af** voor volledige productie-inzet. De eerste stappen zijn gezet (beheer, runs, historisch overzicht, basis-optimalisaties), maar verdere doorontwikkeling en hardening zijn nog nodig.
