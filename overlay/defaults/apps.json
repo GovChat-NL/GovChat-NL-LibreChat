@@ -1,12 +1,6 @@
 {
   "title": "App Launcher",
   "enabled": true,
-  "chat_image_status": {
-    "enabled": true,
-    "first_message": "Afbeelding wordt gegenereerd. Dit duurt meestal 10–40 seconden.",
-    "second_message": "Nog bezig met genereren. De afbeelding verschijnt hier zodra deze klaar is.",
-    "second_delay_ms": 40000
-  },
   "apps": [
     {
       "id": "chat",
