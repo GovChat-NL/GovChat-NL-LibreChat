@@ -16,6 +16,7 @@
 Deze repository is de bron van waarheid voor de deployment en bijbehorende configuratie, n8n-workflows en overlay-integratie. De oorspronkelijke LibreChat-stack blijft op repository-root zodat Compose-entrypoints hun bestaande relatieve paden behouden. De componentgrenzen zijn:
 
 - **LibreChat deployment en LibreChat-overlay**: [`docker-compose.yml`](docker-compose.yml), [`librechat.yaml`](librechat.yaml), [`nginx/librechat-overlay.conf`](nginx/librechat-overlay.conf), [`overlay/defaults/`](overlay/defaults/) en [`n8n/`](n8n/).
+- **Proxy- en tenant-hardening**: [`docs/nginx-security.md`](docs/nginx-security.md).
 - **Agent-workflows**: [`agents/n8n/workflows/`](agents/n8n/workflows/); n8n-bootstrap importeert deze bestanden lokaal uit de monorepo.
 - **GovChat Admin-overlay service**: server en beheerinterface in [`services/admin-overlay/admin/`](services/admin-overlay/admin/). Compose mount LibreChat-specifieke defaults uit [`overlay/defaults/`](overlay/defaults/) en neemt dus niet stilzwijgend de Open WebUI-defaults over.
 - **Bridge**: blijft een afzonderlijke repository/service, gekoppeld via een digest-vastgepinde image; alleen stackconfiguratie staat in [`bridge/models.json`](bridge/models.json). Bron: [GovChat-NL/n8n-openai-bridge](https://github.com/GovChat-NL/n8n-openai-bridge).
@@ -279,16 +280,17 @@ Deze waarden worden via Compose doorgegeven aan zowel `n8n` als `n8n-runners` in
    - Deze file is gemount in `n8n-runners` in [`docker-compose.yml`](docker-compose.yml).
 
 2. **Gedeelde image map beschikbaar**
-   - `/opt/librechat/images:/shared-images` wordt gebruikt om gegenereerde PNG-bestanden op te slaan.
+   - `/opt/librechat/images:/shared-images` wordt gebruikt om gegenereerde PNG/JPEG-bestanden per LibreChat-user op te slaan (`/shared-images/<user-id>/`).
    - Bij Linux host-permissieproblemen (`EACCES`) moet de map schrijfbaar zijn voor runner user (uid/gid `1000`).
+   - Nginx serveert uitsluitend `/images/<user-id>/<filename>` na verificatie van de LibreChat refresh-cookie en overeenkomst van de user-id; oude globale `/images/<filename>`-URLs worden bewust geweigerd.
 
 3. **Publieke URL opbouw**
-   - workflow gebruikt `PUBLIC_BASE_URL` om `/images/<bestand>.png` links te genereren.
+   - workflow retourneert een relatief pad `/images/<user-id>/<bestand>`; Nginx controleert de eigenaar bij elke request.
 
 ### Gedrag bij output
 
 - Bij normale URL-output van model: workflow retourneert direct markdown `![gegenereerde afbeelding](...)`.
-- Bij base64-output: workflow schrijft PNG naar `/shared-images` en retourneert ook markdown URL.
+- Bij base64-output: workflow controleert formaat/magic bytes, schrijft de afbeelding exclusief in de directory van de geauthenticeerde eigenaar en retourneert markdown met het ownerscoped pad.
 - Hierdoor kan LibreChat de afbeelding inline renderen in plaats van alleen tekst te tonen.
 
 ### Asynchrone image-jobs met tussentijdse status (aanbevolen)
@@ -303,7 +305,6 @@ De worker in `govchat-overlay-admin` roept intern de bestaande n8n image-webhook
 #### Benodigde `.env` variabelen
 
 - `IMAGE_JOBS_ENABLED=true`
-- `IMAGE_JOBS_TOKEN=<sterk random token>`
 - `IMAGE_JOBS_WEBHOOK_URL=http://n8n:5678/webhook/image-generator`
 - `IMAGE_JOBS_WEBHOOK_TOKEN=<n8n webhook token>` (fallback op `N8N_WEBHOOK_TOKEN`)
 - `IMAGE_JOBS_CONCURRENCY=1`
@@ -315,7 +316,11 @@ In [`overlay/defaults/apps.json`](overlay/defaults/apps.json) staat standaard ee
 
 - `target: "imagegen"`
 - `url: "/govchat-api/image-jobs"`
-- `config.image_jobs_api` en `config.image_jobs_token`
+- `config.image_jobs_api`; authenticatie verloopt via de ingelogde LibreChat-refresh-cookie (geen browser-brede bearer token)
+
+Image-jobs zijn per user afgeschermd: de API accepteert alleen een geldig gesigneerd refresh-token, slaat de eigenaar aan de job op, en weigert polling door andere gebruikers. Maximaal twee actieve jobs en zes generaties per uur per gebruiker, strikte invoerlimieten en Nginx rate limiting beperken kostenmisbruik.
+
+Zie [`docs/nginx-security.md`](docs/nginx-security.md) voor Nginx/Compose-hardening, trusted ingress-CIDR-configuratie, validatie en rollback.
 
 De loader toont tijdens polling statusberichten in het Nederlands, zoals:
 
