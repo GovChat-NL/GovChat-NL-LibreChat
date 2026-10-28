@@ -1192,7 +1192,6 @@
     if (document.getElementById("gc-img")) return;
 
     const apiBase = String(app.config?.image_jobs_api || app.url || "").trim();
-    const apiToken = String(app.config?.image_jobs_token || "").trim();
 
     const container = document.createElement("div");
     container.id = "gc-img";
@@ -1284,11 +1283,7 @@
     }
 
     function getAuthHeaders() {
-      if (!apiToken) return { "Content-Type": "application/json" };
-      return {
-        "Content-Type": "application/json",
-        "x-govchat-token": apiToken,
-      };
+      return { "Content-Type": "application/json" };
     }
 
     function isTerminalStatus(s) {
@@ -1316,7 +1311,7 @@
         try {
           const resp = await fetch(`${apiBase}/${encodeURIComponent(jobId)}`, {
             method: "GET",
-            headers: apiToken ? { "x-govchat-token": apiToken } : {},
+            credentials: "same-origin",
             cache: "no-store",
           });
 
@@ -1391,6 +1386,7 @@
         const resp = await fetch(apiBase, {
           method: "POST",
           headers: getAuthHeaders(),
+          credentials: "same-origin",
           body: JSON.stringify({
             prompt,
             size: String(sizeEl?.value || "1024x1024"),

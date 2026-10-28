@@ -49,8 +49,7 @@
       "url": "/govchat-api/image-jobs",
       "target": "imagegen",
       "config": {
-        "image_jobs_api": "/govchat-api/image-jobs",
-        "image_jobs_token": "local_image_jobs_token_change_me"
+        "image_jobs_api": "/govchat-api/image-jobs"
       }
     },
     {
