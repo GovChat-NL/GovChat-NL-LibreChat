@@ -18,10 +18,10 @@ Deze repository is de bron van waarheid voor de deployment en bijbehorende confi
 - **LibreChat deployment en LibreChat-overlay**: [`docker-compose.yml`](docker-compose.yml), [`librechat.yaml`](librechat.yaml), [`nginx/librechat-overlay.conf`](nginx/librechat-overlay.conf), [`overlay/defaults/`](overlay/defaults/) en [`n8n/`](n8n/).
 - **Proxy- en tenant-hardening**: [`docs/nginx-security.md`](docs/nginx-security.md).
 - **Agent-workflows**: [`agents/n8n/workflows/`](agents/n8n/workflows/); n8n-bootstrap importeert deze bestanden lokaal uit de monorepo.
-- **GovChat Admin-overlay service**: server en beheerinterface in [`services/admin-overlay/admin/`](services/admin-overlay/admin/). Compose mount LibreChat-specifieke defaults uit [`overlay/defaults/`](overlay/defaults/) en neemt dus niet stilzwijgend de Open WebUI-defaults over.
-- **Bridge**: blijft een afzonderlijke repository/service, gekoppeld via een digest-vastgepinde image; alleen stackconfiguratie staat in [`bridge/models.json`](bridge/models.json). Bron: [GovChat-NL/n8n-openai-bridge](https://github.com/GovChat-NL/n8n-openai-bridge).
+- **GovChat Admin-overlay service (WIP, optioneel)**: server en beheerinterface in [`services/admin-overlay/admin/`](services/admin-overlay/admin/). Standaard uit; start met Compose-profiel `admin-overlay`. Compose mount LibreChat-specifieke defaults uit [`overlay/defaults/`](overlay/defaults/) en neemt dus niet stilzwijgend de Open WebUI-defaults over.
+- **Bridge**: blijft een afzonderlijke repository/service. De standaard Compose bouwt de GovChat-NL-bridge vanuit de sibling-checkout van branch `main`; stackconfiguratie staat in [`bridge/models.json`](bridge/models.json). Bron: [GovChat-NL/n8n-openai-bridge](https://github.com/GovChat-NL/n8n-openai-bridge).
 
-De request-flow blijft LibreChat → OpenAI-compatibele bridge → n8n webhook → workflow/LiteLLM (rechtstreeks vanuit n8n). Native live tool-cards zijn de bedoelde tool-lifecyclepresentatie, maar de benodigde runtimepatches zitten niet in deze migratiebranch en zijn hier dus nog niet actief. Zie [`docs/live-tool-calling.md`](docs/live-tool-calling.md) en [`docs/monorepo-migration.md`](docs/monorepo-migration.md).
+De request-flow blijft LibreChat → OpenAI-compatibele GovChat-NL-bridge → n8n webhook → workflow/LiteLLM (rechtstreeks vanuit n8n). Tool-calling en native live tool-cards zijn standaard actief: Compose bouwt de bridge vanaf `main` en laadt de bijbehorende LibreChat- en n8n-runtime-overlays. Zie [`docs/live-tool-calling.md`](docs/live-tool-calling.md) en [`docs/monorepo-migration.md`](docs/monorepo-migration.md).
 
 ## OpenBesluitvorming
 
@@ -36,17 +36,24 @@ Voor lokaal testen kun je de gepubliceerde Provincie Limburg-snapshot expliciet 
 ### Snelle start en controles
 
 1. Kopieer `.env.example` naar een lokaal, genegeerd `.env` en vul de omgevingsspecifieke URLs, provider/API-sleutels en sterke willekeurige secrets in. Commit nooit `.env`.
-2. Controleer Compose en de geïmporteerde workflowbestanden:
+2. Clone de bridge naast deze repository op branch `main`:
+
+   ```sh
+   git clone --depth 1 --branch main https://github.com/GovChat-NL/n8n-openai-bridge.git ../n8n-openai-bridge-main
+   ```
+
+3. Controleer Compose en de geïmporteerde workflowbestanden:
 
    ```sh
    docker compose --env-file .env.example config --quiet
+   docker compose --env-file .env.example --profile admin-overlay config --quiet
    node tests/agents/validate-workflows.js
    node --check n8n/bootstrap.js
    node --check services/admin-overlay/admin/server.js
    ```
 
-3. Start met `docker compose --env-file .env up -d`. De standaard Compose gebruikt officiële LibreChat/n8n images, de lokaal beheerde workflowexports en de bridge-digest die hieronder is vastgelegd.
-4. De live orchestrator-/transcriptietests vereisen draaiende services en providerconfiguratie: `node tests/orchestrator/run-validation.js` en `node tests/transcript/run-validation.js`.
+4. Start met `docker compose --env-file .env up -d`. Compose bouwt de GovChat-NL-bridge vanuit de sibling-checkout op `main` als de lokale image nog ontbreekt. De WIP Admin Overlay blijft standaard uit. Gebruik `docker compose --env-file .env build n8n-openai-bridge` alleen nadat je de bridgebron hebt gewijzigd; daarna start je de stack weer met `up -d`.
+5. De live orchestrator-/transcriptietests vereisen draaiende services en providerconfiguratie: `node tests/orchestrator/run-validation.js` en `node tests/transcript/run-validation.js`.
 
 De volledige omgevingsvariabelen staan in [`.env.example`](.env.example); de technische migratie- en testmatrix staat in [`docs/monorepo-migration.md`](docs/monorepo-migration.md). Dit blijft een referentie-implementatie, niet een productieklare deployment.
 
@@ -75,7 +82,6 @@ Standaard actief met `docker compose up -d`:
 - `mongodb`
 - `redis`
 - `meilisearch`
-- `govchat-overlay-admin`
 - `n8n-postgres`
 - `n8n`
 - `n8n-bootstrap` (eenmalige workflow-import)
@@ -85,9 +91,15 @@ Standaard actief met `docker compose up -d`:
 
 Niet standaard actief:
 
+- `govchat-overlay-admin` (WIP; profiel: `admin-overlay`)
 - `pgvector` (profiel: `rag` of `admin`)
 - `rag-api` (profiel: `rag`)
 - `pgadmin` (profiel: `admin`)
+
+De WIP Admin Overlay blijft bewust standaard uit. Schakel hem alleen in voor
+testen met `docker compose --profile admin-overlay up -d`. Herbouw hem expliciet
+met `docker compose --profile admin-overlay build govchat-overlay-admin` nadat de
+broncode is gewijzigd.
 
 ## Waarom `pgvector`, `rag-api`, `pgadmin`?
 
@@ -199,11 +211,11 @@ De **standaard chat** is gekoppeld via [`librechat.yaml`](librechat.yaml) aan [`
 - bridge model `govchat-orchestrator` -> `http://n8n:5678/webhook/orchestrator`
 - bridge-authenticatie via `${N8N_OPENAI_BRIDGE_BEARER_TOKEN}`
 
-De standaardimage is vastgepind op OCI digest `sha256:d61947deaa1b094d03fbdb268fbaf9f35766a792c8776d8014bf7d1188f0232d`; er wordt geen `latest`-tag gebruikt. Het bridge-project en zijn releasecyclus blijven apart: [GovChat-NL/n8n-openai-bridge](https://github.com/GovChat-NL/n8n-openai-bridge). De lokale ontwikkeloverride staat in [`docker-compose.bridge-dev.yml`](docker-compose.bridge-dev.yml) en bouwt alleen wanneer een bridge-checkout naast deze repository staat. Zie de migratiedocumentatie voor de niet-geverifieerde relatie tussen de legacy gepubliceerde artifact en de huidige broncheckout.
+De standaard [`docker-compose.yml`](docker-compose.yml) bouwt de bridge vanuit `../n8n-openai-bridge-main`, een lokale clone van branch `main` van [GovChat-NL/n8n-openai-bridge](https://github.com/GovChat-NL/n8n-openai-bridge). Er is geen upstream-image of tweede Compose-override nodig.
 
 ### Native live tool-call kaarten
 
-De runtime-overlay voor native kaarten wordt door [`docker-compose.yml`](docker-compose.yml) in LibreChat en n8n geladen. Tool-lifecycle-events worden als afgeschermde sideband door de bridge gestreamd; daarom vereist een volledige live test ook de companion-branch `feature/live-tool-calling` van de afzonderlijke bridge-repository. De standaard digest in [`bridge/models.json`](bridge/models.json) blijft ongewijzigd. Zie [`docs/live-tool-calling.md`](docs/live-tool-calling.md) voor de lokale build override, event-flow en teststappen.
+De runtime-overlays voor native kaarten worden standaard door [`docker-compose.yml`](docker-compose.yml) in LibreChat en n8n geladen. De standaard bridge-build komt van GovChat-NL `main`, waar de sideband voor tool-lifecycle-events onderdeel van is. Er is geen feature-branch-override nodig; zie [`docs/live-tool-calling.md`](docs/live-tool-calling.md) voor de event-flow en teststappen.
 
 ### Context/token usage indicator (default uit)
 
