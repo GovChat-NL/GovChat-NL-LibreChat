@@ -255,8 +255,6 @@ services:
     depends_on:
       librechat:
         condition: service_started
-      govchat-overlay-admin:
-        condition: service_started
     ports:
       - "${LC_PORT:-3080}:3080"
     volumes:
@@ -587,9 +585,12 @@ services:
       - librechat-net
 
   n8n-openai-bridge:
-    # Pinned OCI index digest: ghcr.io/sveneisenschmidt/n8n-openai-bridge:pr-72
-    # Resolve a future GovChat-NL release here only after compatibility testing.
-    image: ghcr.io/sveneisenschmidt/n8n-openai-bridge@sha256:d61947deaa1b094d03fbdb268fbaf9f35766a792c8776d8014bf7d1188f0232d
+    # Build the clean GovChat-NL main-branch checkout kept beside this repository.
+    # It emits the sideband used by the LibreChat and n8n runtime overlays.
+    image: govchat-nl/n8n-openai-bridge:main
+    build:
+      context: ../n8n-openai-bridge-main
+      dockerfile: docker/Dockerfile.build
     container_name: n8n-openai-bridge
     restart: unless-stopped
     depends_on:
@@ -762,7 +763,8 @@ services:
   # ---------------------------------------------------------------------------
   #  GovChat Overlay Admin
   #  Publiceert help/apps/loader/css naar gedeelde overlay-map.
-  #  Let op: gebruikt LibreChat-specifieke defaults via bind mount.
+  #  WIP; opt-in met --profile admin-overlay. Standaard uitgeschakeld.
+  #  Gebruikt LibreChat-specifieke defaults via bind mount.
   # ---------------------------------------------------------------------------
   govchat-overlay-admin:
     build:
@@ -806,6 +808,8 @@ services:
       - /opt/librechat/overlay/data:/data
       - /opt/librechat/overlay/publish:/publish
       - ./overlay/defaults:/app/defaults:ro
+    profiles:
+      - admin-overlay
     networks:
       - librechat-net
 
