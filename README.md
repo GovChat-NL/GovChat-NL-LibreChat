@@ -22,7 +22,18 @@ Deze repository is de bron van waarheid voor de deployment en bijbehorende confi
 
 De request-flow blijft LibreChat → OpenAI-compatibele bridge → n8n webhook → workflow/LiteLLM (rechtstreeks vanuit n8n). Native live tool-cards zijn de bedoelde tool-lifecyclepresentatie, maar de benodigde runtimepatches zitten niet in deze migratiebranch en zijn hier dus nog niet actief. Zie [`docs/live-tool-calling.md`](docs/live-tool-calling.md) en [`docs/monorepo-migration.md`](docs/monorepo-migration.md).
 
-## OpenBesluitvorming
+## Gekoppelde systemen
+
+GovChat koppelt met externe systemen voor het doorzoeken van informatie of het uitvoeren van geautoriseerde functies. De integratie is geen vervanging van het bronsysteem: formele registraties en officiële indieningen blijven daar plaatsvinden.
+
+| Systeem | Doel in GovChat | Details |
+| --- | --- | --- |
+| **OpenBesluitvorming** | Doorzoekbare openbare besluitvormingsdocumenten met bronverwijzingen; de huidige starterdataset richt zich op Provincie Limburg en wordt via Qdrant beschikbaar gemaakt. | Zie de [OpenBesluitvorming-sectie hieronder](#openbesluitvorming-werking-en-beheer) en [release-/beheerhandleiding](docs/openbesluitvorming-release-artifacts.md). |
+| **JEMS (NWE Joint Electronic Monitoring System)** | Interreg North-West Europe-projectmonitoring voor de projectcyclus: aanvraag, inhoudelijke en financiële voortgang, controle van uitgaven en monitoring door het Joint Secretariat. GovChat ontsluit geautoriseerde JEMS-functies als aparte MCP-tool via het vast ingestelde staging MCP-endpoint. | [Officiële JEMS-informatie](https://www.nweurope.eu/jems) · [MCP Hub- en configuratiedocumentatie](agents/mcp-hub/README.md). |
+
+Voor NWE-calls moeten projectaanvragen voor stap 1 en stap 2 in het Engels en uitsluitend via JEMS worden ingediend. Gebruik van de GovChat-koppeling vervangt deze officiële indieningsroute niet. De JEMS MCP-toegang is fail-closed en hoort alleen te worden ingeschakeld met geverifieerde Entra-groepen. `ENTRA_JWT_ENABLED` staat standaard uit; schakel JWT-verificatie pas in wanneer de LibreChat-aanvraag aantoonbaar het Entra-access-token via `X-Entra-Access-Token` aan de bridge doorgeeft. De endpoint-URL is vast opgenomen in de twee JEMS-workflows en hoeft niet in `.env` te worden gezet. Zie [`.env.example`](.env.example) en de [MCP Hub-documentatie](agents/mcp-hub/README.md) voor overige configuratie.
+
+### OpenBesluitvorming: werking en beheer
 
 De OpenBesluitvorming-workflows maken publieke besluitvormingsdocumenten doorzoekbaar met bronverwijzingen. De workflow-JSON staat als monorepo-assets in [`agents/n8n/workflows/`](agents/n8n/workflows/): documentworker, checkpointed snapshot-ingest, high-recall search, incremental sync en de orchestrator-integratie. De lokale n8n-bootstrap importeert deze bestanden samen met de overige agent-workflows.
 

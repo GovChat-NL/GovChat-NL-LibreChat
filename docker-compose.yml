@@ -482,6 +482,8 @@ services:
       N8N_LITELLM_IMAGE_MODEL: ${N8N_LITELLM_IMAGE_MODEL:-gpt-image-1}
       N8N_WEBHOOK_TOKEN: ${N8N_WEBHOOK_TOKEN}
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
+      MCP_HUB_JEMS_REQUIRED_GROUP_IDS: ${MCP_HUB_JEMS_REQUIRED_GROUP_IDS:-[]}
+      MCP_HUB_REGISTRY_TABLE_ID: ${MCP_HUB_REGISTRY_TABLE_ID:-GovChatMcpHubRegistry01}
       CRAWLER_ADMIN_BASE_URL: ${CRAWLER_ADMIN_BASE_URL:-http://govchat-overlay-admin:3002}
       CRAWLER_INTERNAL_TOKEN: ${CRAWLER_INTERNAL_TOKEN:-${N8N_WEBHOOK_TOKEN}}
     volumes:
@@ -524,6 +526,8 @@ services:
       N8N_LITELLM_IMAGE_API_KEY: ${N8N_LITELLM_IMAGE_API_KEY:-${LITELLM_API_KEY}}
       N8N_LITELLM_IMAGE_MODEL: ${N8N_LITELLM_IMAGE_MODEL:-gpt-image-1}
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
+      MCP_HUB_JEMS_REQUIRED_GROUP_IDS: ${MCP_HUB_JEMS_REQUIRED_GROUP_IDS:-[]}
+      MCP_HUB_REGISTRY_TABLE_ID: ${MCP_HUB_REGISTRY_TABLE_ID:-GovChatMcpHubRegistry01}
       N8N_RUNNERS_AUTO_SHUTDOWN_TIMEOUT: "30"
       N8N_RUNNERS_TASK_TIMEOUT: "180"
       N8N_RUNNERS_LAUNCHER_LOG_LEVEL: warn
@@ -561,7 +565,14 @@ services:
       N8N_OWNER_ENFORCE: ${N8N_OWNER_ENFORCE:-true}
       LITELLM_URL: ${LITELLM_URL}
       LITELLM_API_KEY: ${LITELLM_API_KEY}
+      # JEMS secret values are only provided to the one-shot bootstrap container, which
+      # encrypts them into n8n credentials. They are deliberately not passed to n8n/runners.
+      JEMS_MCP_API_KEY: ${JEMS_MCP_API_KEY:-}
+      JEMS_MCP_USERNAME: ${JEMS_MCP_USERNAME:-${JEMS_MCP_EMAIL:-}}
+      JEMS_MCP_PASSWORD: ${JEMS_MCP_PASSWORD:-}
+      MCP_HUB_REGISTRY_TABLE_ID: ${MCP_HUB_REGISTRY_TABLE_ID:-GovChatMcpHubRegistry01}
       AGENTS_LOCAL_WORKFLOWS_DIR: /workspace/agents/n8n/workflows
+      MCP_HUB_LOCAL_WORKFLOWS_DIR: /workspace/agents/mcp-hub/workflows
       AGENTS_BOOTSTRAP_FORCE: ${AGENTS_BOOTSTRAP_FORCE:-false}
     volumes:
       - n8n-data:/home/node/.n8n
@@ -595,6 +606,11 @@ services:
       USER_EMAIL_HEADERS: ${N8N_OPENAI_BRIDGE_USER_EMAIL_HEADERS:-X-User-Email,X-OpenWebUI-User-Email}
       USER_NAME_HEADERS: ${N8N_OPENAI_BRIDGE_USER_NAME_HEADERS:-X-User-Name,X-OpenWebUI-User-Name}
       USER_ROLE_HEADERS: ${N8N_OPENAI_BRIDGE_USER_ROLE_HEADERS:-X-User-Role,X-OpenWebUI-User-Role}
+      ENTRA_JWT_ENABLED: ${ENTRA_JWT_ENABLED:-false}
+      ENTRA_TENANT_ID: ${ENTRA_TENANT_ID:-}
+      ENTRA_EXPECTED_AUDIENCE: ${ENTRA_EXPECTED_AUDIENCE:-}
+      ENTRA_EXPECTED_ISSUER: ${ENTRA_EXPECTED_ISSUER:-}
+      ENTRA_ACCESS_TOKEN_HEADER: ${ENTRA_ACCESS_TOKEN_HEADER:-X-Entra-Access-Token}
     volumes:
       - ./bridge/models.json:/app/models.json:ro
     healthcheck:
